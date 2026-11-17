@@ -1,12 +1,13 @@
-name = "universal-api-server"
+name = "universal-api-server-v3"
 main = "src/index.ts"
 compatibility_date = "2024-05-29"
 compatibility_flags = ["nodejs_compat"]
 
 [vars]
-ENVIRONMENT = "development"
+ENVIRONMENT = "production"
 API_VERSION = "v1"
-JWT_SECRET = "change-me-in-production"
+# JWT_SECRET is a worker secret: set via `wrangler secret put JWT_SECRET`
+# (never committed to wrangler.toml)
 
 [[d1_databases]]
 binding = "DB"
