@@ -108,13 +108,15 @@ async function main() {
   const nf = await req('GET', '/nope')
   log('GET unknown path -> 404', nf.status === 404, nf.json?.path)
 
-  // 15. Rate limit: 105 quick requests -> some 429
-  let limited = 0
-  for (let i = 0; i < 105; i++) {
-    const r = await fetch(BASE + '/api/v1/db/items')
-    if (r.status === 429) limited++
-  }
-  log('rate limit trips at >100/min', limited > 0, `${limited} of 105 got 429`)
+  // 15. Rate limit: parallel burst of 120 in one window -> some 429.
+  //     Sequential requests span multiple minute windows (slow network),
+  //     so a burst is the only way to exceed 100 in a single window.
+  const burst = await Promise.all(
+    Array.from({ length: 120 }, () => fetch(BASE + '/api/v1/db/items').then(r => r.status).catch(() => 'ERR'))
+  )
+  const limited = burst.filter(s => s === 429).length
+  const ok = burst.filter(s => s === 200).length
+  log('rate limit trips at >100/min', limited > 0 && ok <= 100, `${ok} passed, ${limited} throttled`)
 
   console.log(`\n${pass} passed, ${fail} failed`)
   if (fail > 0) process.exit(1)
