@@ -78,6 +78,16 @@ export async function ensureAuthTables(db: D1Database) {
     // column already exists on a v3 database
   }
 
+  // Rate limit counters (per-IP, per-minute window)
+  await db.prepare(`
+    CREATE TABLE IF NOT EXISTS rate_limits (
+      ip           TEXT NOT NULL,
+      window_start INTEGER NOT NULL,
+      count        INTEGER NOT NULL DEFAULT 1,
+      PRIMARY KEY (ip, window_start)
+    )
+  `).run()
+
   // Indexes
   await db.prepare(`CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)`).run()
   await db.prepare(`CREATE INDEX IF NOT EXISTS idx_otp_codes_email ON otp_codes(email)`).run()
