@@ -39,6 +39,13 @@ app.use('*', cors({
 }))
 
 app.use('*', logger())
+
+// Never let the edge cache a dynamic API response (auth, tokens, items...).
+// Caching here silently bypasses middleware like the rate limiter.
+app.use('*', async (c, next) => {
+  await next()
+  c.res.headers.set('Cache-Control', 'no-store')
+})
 app.use('*', prettyJSON())
 app.use('*', rateLimitMiddleware())
 app.use('*', requestLogMiddleware)

@@ -17,14 +17,36 @@ export function rateLimitMiddleware() {
     const now = Date.now()
     const windowStart = Math.floor(now / RATE_LIMIT_WINDOW_MS) * RATE_LIMIT_WINDOW_MS
 
+    let row: { count: number } | null = null
     try {
-      const row = await c.env.DB.prepare(
+      row = await c.env.DB.prepare(
         `INSERT INTO rate_limits (ip, window_start, count) VALUES (?, ?, 1)
          ON CONFLICT(ip, window_start) DO UPDATE SET count = count + 1
          RETURNING count`
       ).bind(ip, windowStart).first() as { count: number } | null
+    } catch {
+      // First-ever use on a fresh DB: table may not exist yet -> create + retry once
+      try {
+        await c.env.DB.prepare(
+          `CREATE TABLE IF NOT EXISTS rate_limits (
+             ip           TEXT NOT NULL,
+             window_start INTEGER NOT NULL,
+             count        INTEGER NOT NULL DEFAULT 1,
+             PRIMARY KEY (ip, window_start)
+           )`
+        ).run()
+        row = await c.env.DB.prepare(
+          `INSERT INTO rate_limits (ip, window_start, count) VALUES (?, ?, 1)
+           ON CONFLICT(ip, window_start) DO UPDATE SET count = count + 1
+           RETURNING count`
+        ).bind(ip, windowStart).first() as { count: number } | null
+      } catch {
+        // D1 unavailable: fail open so requests still work
+      }
+    }
 
-      const count = row?.count ?? 1
+    if (row) {
+      const count = row.count ?? 1
       if (count > RATE_LIMIT_MAX) {
         const retryAfter = Math.ceil((windowStart + RATE_LIMIT_WINDOW_MS - now) / 1000)
         return c.json({ error: 'Too many requests', retry_after: retryAfter }, 429)
@@ -32,11 +54,13 @@ export function rateLimitMiddleware() {
 
       // Opportunistic cleanup of stale windows (~1% of requests)
       if (Math.random() < 0.01) {
-        await c.env.DB.prepare(`DELETE FROM rate_limits WHERE window_start < ?`)
-          .bind(now - WINDOW_KEEP).run()
+        try {
+          await c.env.DB.prepare(`DELETE FROM rate_limits WHERE window_start < ?`)
+            .bind(now - WINDOW_KEEP).run()
+        } catch {
+          // cleanup is best-effort
+        }
       }
-    } catch {
-      // If D1 hiccups, fail open: rate limiting must not break the API
     }
 
     await next()
