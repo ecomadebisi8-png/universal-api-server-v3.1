@@ -13,3 +13,7 @@ API_VERSION = "v1"
 binding = "DB"
 database_name = "universal-api-db"
 database_id = "7485bcbd-91cc-4c5e-98a0-282e84b0c153"
+
+# Daily housekeeping: prune old api_logs (30d) and stale rate-limit rows
+[triggers]
+crons = ["0 4 * * *"]

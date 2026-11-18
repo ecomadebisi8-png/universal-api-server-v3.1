@@ -16,7 +16,7 @@ import { prettyJSON } from 'hono/pretty-json'
 import type { Bindings, Variables } from './types'
 import { rateLimitMiddleware } from './middleware/rate-limit'
 import { requestLogMiddleware } from './middleware/logging'
-import { ensureAuthTables } from './lib/db'
+import { ensureAuthTables, pruneOldData } from './lib/db'
 
 import health from './routes/health'
 import auth from './routes/auth'
@@ -75,4 +75,15 @@ app.route('/api/v1/project-alpha', projectAlpha)
 app.route('/api/v1/project-beta', projectBeta)
 app.route('/api/v1/db', database)
 
-export default app
+// Scheduled housekeeping: prune old api_logs (30d) and stale rate-limit rows.
+// Configured via [triggers] in wrangler.toml.
+export default {
+  fetch: app.fetch,
+  async scheduled(event: any, env: Bindings, ctx: any) {
+    ctx.waitUntil(
+      pruneOldData(env.DB)
+        .then((r) => console.log('[CRON] pruned:', JSON.stringify(r)))
+        .catch((e) => console.error('[CRON] prune failed:', e instanceof Error ? e.message : String(e)))
+    )
+  },
+}

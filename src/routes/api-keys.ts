@@ -7,6 +7,7 @@ import type { Bindings, Variables } from '../types'
 import { jwtAuth } from '../middleware/auth'
 import { generateApiKeyPlain, hashApiKey } from '../lib/random'
 import { createApiKeyRow, ensureAuthTables, listApiKeyRows, logRequest, revokeApiKeyRow } from '../lib/db'
+import { parseJson } from '../lib/request'
 
 const apiKeys = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
@@ -39,11 +40,12 @@ apiKeys.post('/', async (c) => {
 
   await ensureAuthTables(c.env.DB)
 
-  const { name, permissions, expires_in_days } = await c.req.json<{
+  const body = await parseJson<{
     name?: string
     permissions?: string[]
     expires_in_days?: number
-  }>()
+  }>(c)
+  const { name, permissions, expires_in_days } = body ?? {}
 
   const plainKey = generateApiKeyPlain()
   const keyHash = await hashApiKey(plainKey)

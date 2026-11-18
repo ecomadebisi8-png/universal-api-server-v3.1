@@ -108,6 +108,49 @@ async function main() {
   const nf = await req('GET', '/nope')
   log('GET unknown path -> 404', nf.status === 404, nf.json?.path)
 
+  // 14b. Malformed JSON -> clean 400 (not a 500)
+  const badJson = await fetch(BASE + '/api/v1/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: 'this-is-not-json{',
+  })
+  log('POST malformed JSON -> 400', badJson.status === 400, `status=${badJson.status}`)
+
+  // 14c. Change password + logout-all + permission enforcement
+  const wrongPw = await req('POST', '/api/v1/auth/change-password', { current_password: 'nope', new_password: 'NewPass123!' }, { Authorization: `Bearer ${accessToken}` })
+  log('POST change-password wrong current -> 401', wrongPw.status === 401, `status=${wrongPw.status}`)
+
+  const shortPw = await req('POST', '/api/v1/auth/change-password', { current_password: password, new_password: '123' }, { Authorization: `Bearer ${accessToken}` })
+  log('POST change-password too short -> 400', shortPw.status === 400, `status=${shortPw.status}`)
+
+  const changed = await req('POST', '/api/v1/auth/change-password', { current_password: password, new_password: 'BrandNewPass1!' }, { Authorization: `Bearer ${accessToken}` })
+  const changedOk = changed.status === 200 && changed.json?.status === 'password_changed'
+  log('POST change-password', changedOk, changed.json?.note ?? changed.json?.error)
+  if (changedOk) {
+    // old password must fail now
+    const oldLogin = await req('POST', '/api/v1/auth/login', { email, password })
+    log('login with old password -> 401', oldLogin.status === 401, `status=${oldLogin.status}`)
+    // refresh tokens were revoked by the password change
+    const refAfterChange = await req('POST', '/api/v1/auth/refresh', { refresh_token: refreshToken })
+    log('refresh after password change -> 401', refAfterChange.status === 401, `status=${refAfterChange.status}`)
+  }
+
+  // New key with read-only permission: GET ok, POST forbidden
+  const roKeyCreated = await req('POST', '/api/v1/auth/api-keys', { name: 'readonly-key', permissions: ['read'] }, { Authorization: `Bearer ${accessToken}` })
+  const roKey = roKeyCreated.json?.key
+  const roDeletedAuth = roKeyCreated.status === 201
+  log('POST api-keys create readonly', roDeletedAuth, roKey?.slice(0, 14))
+  if (roKey) {
+    const roGet = await req('GET', '/api/v1/project-alpha', null, { 'X-API-Key': roKey })
+    log('readonly key GET -> 200', roGet.status === 200, `status=${roGet.status}`)
+    const roPost = await req('POST', '/api/v1/project-alpha/items', { name: 'x' }, { 'X-API-Key': roKey })
+    log('readonly key POST -> 403', roPost.status === 403, `status=${roPost.status}`)
+    // clean up: the create response has no id, so look it up in the list
+    const listAfter = await req('GET', '/api/v1/auth/api-keys', null, { Authorization: `Bearer ${accessToken}` })
+    const roRow = (listAfter.json?.keys ?? []).find(k => k.name === 'readonly-key')
+    if (roRow?.id) await req('DELETE', `/api/v1/auth/api-keys/${roRow.id}`, null, { Authorization: `Bearer ${accessToken}` })
+  }
+
   // 15. Rate limit: parallel burst of 120 in one window -> some 429.
   //     Sequential requests span multiple minute windows (slow network),
   //     so a burst is the only way to exceed 100 in a single window.

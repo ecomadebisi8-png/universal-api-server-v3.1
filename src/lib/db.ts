@@ -128,6 +128,10 @@ export async function createUser(db: D1Database, email: string, passwordHash: st
   return (res as { id: string }).id
 }
 
+export async function updateUserPassword(db: D1Database, userId: string, passwordHash: string) {
+  await db.prepare(`UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?`).bind(passwordHash, userId).run()
+}
+
 /* -- Refresh tokens -- */
 
 export async function storeRefreshToken(db: D1Database, userId: string, tokenHash: string, expiresAt: string) {
@@ -202,6 +206,24 @@ export async function updateApiKeyLastUsed(db: D1Database, keyId: string) {
 export async function revokeApiKeyRow(db: D1Database, keyId: string, userId: string) {
   const res = await db.prepare(`DELETE FROM api_keys WHERE id = ? AND user_id = ?`).bind(keyId, userId).run()
   return res.meta?.changes ?? 0
+}
+
+/* -- Housekeeping (scheduled cleanup) -- */
+
+export async function pruneOldData(db: D1Database, logRetentionDays = 30) {
+  const logResult = await db.prepare(
+    `DELETE FROM api_logs WHERE created_at < datetime('now', ?)`
+  ).bind(`-${logRetentionDays} days`).run()
+
+  const nowMs = Date.now()
+  const rateResult = await db.prepare(
+    `DELETE FROM rate_limits WHERE window_start < ?`
+  ).bind(nowMs - 24 * 60 * 60 * 1000).run()
+
+  return {
+    api_logs_deleted: logResult.meta?.changes ?? 0,
+    rate_limits_deleted: rateResult.meta?.changes ?? 0,
+  }
 }
 
 /* -- Request log -- */

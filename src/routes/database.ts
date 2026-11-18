@@ -5,6 +5,7 @@
 import { Hono } from 'hono'
 import type { Bindings } from '../types'
 import { ensureAuthTables } from '../lib/db'
+import { parseJson } from '../lib/request'
 
 const database = new Hono<{ Bindings: Bindings }>()
 
@@ -19,11 +20,12 @@ database.get('/items', async (c) => {
 })
 
 database.post('/items', async (c) => {
-  const body = await c.req.json<{ name?: string }>()
-  const result = await c.env.DB.prepare(`INSERT INTO items (name) VALUES (?)`).bind(body.name ?? 'untitled').run()
+  const body = await parseJson<{ name?: string }>(c)
+  const name = body?.name ?? 'untitled'
+  const result = await c.env.DB.prepare(`INSERT INTO items (name) VALUES (?)`).bind(name).run()
   return c.json({
     id: result.meta?.last_row_id,
-    name: body.name ?? 'untitled',
+    name,
     created: true,
   }, 201)
 })

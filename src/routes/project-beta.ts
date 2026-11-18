@@ -5,6 +5,7 @@
 import { Hono } from 'hono'
 import type { Bindings, Variables } from '../types'
 import { authOrApiKey } from '../middleware/auth'
+import { parseJson } from '../lib/request'
 
 const projectBeta = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 projectBeta.use('*', authOrApiKey)
@@ -37,9 +38,9 @@ projectBeta.post('/items', async (c) => {
   if (!user && !apiKey) {
     return c.json({ error: 'Unauthorized' }, 401)
   }
-  const body = await c.req.json<{ name?: string }>()
+  const body = await parseJson<{ name?: string }>(c)
   return c.json(
-    { project: 'beta', item: { id: Date.now(), name: body.name ?? 'untitled' }, created: true },
+    { project: 'beta', item: { id: Date.now(), name: (body?.name ?? 'untitled') }, created: true },
     201
   )
 })

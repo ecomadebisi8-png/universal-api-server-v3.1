@@ -6,6 +6,16 @@ import { verifyJWT } from '../lib/jwt'
 import { hashApiKey } from '../lib/random'
 import { getApiKeyByHash, updateApiKeyLastUsed } from '../lib/db'
 
+const WRITE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
+/** Does this key's permission set allow the request method? */
+export function keyAllowsMethod(permissions: string[], method: string): boolean {
+  const m = method.toUpperCase()
+  if (permissions.includes('admin') || permissions.includes('write')) return true
+  if (permissions.includes('read')) return !WRITE_METHODS.has(m)
+  return false
+}
+
 /** Sets c.set('user', payload) when a valid access token is present, then continues. */
 export async function jwtAuth(c: any, next: any) {
   const authHeader = c.req.header('Authorization')
@@ -87,6 +97,12 @@ export async function authOrApiKey(c: any, next: any) {
       return c.json({ error: 'API key expired' }, 401)
     }
     const permissions = typeof row.permissions === 'string' ? JSON.parse(row.permissions) : (row.permissions as string[])
+
+    // Enforce the key's permissions against the request method
+    if (!keyAllowsMethod(permissions, c.req.method)) {
+      return c.json({ error: 'Forbidden: API key lacks permission', method: c.req.method, permissions }, 403)
+    }
+
     c.set('apiKey', { id: row.id, name: row.name, permissions })
     await updateApiKeyLastUsed(c.env.DB, row.id)
     await next()
