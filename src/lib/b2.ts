@@ -64,10 +64,12 @@ export async function presignAvatarUpload(
   const ext = avatarExtFor(contentType)
   const key = `avatars/${userId}-${crypto.randomUUID()}.${ext}`
   const objectUrl = b2PublicUrl(env, key)
+  // aws4fetch passes request headers into the presigned query string, so this
+  // header is how we cap the window — without it the URL lives for 24 hours.
   const signed = await clientFor(env).sign(
     new Request(objectUrl, {
       method: 'PUT',
-      headers: { 'Content-Type': contentType },
+      headers: { 'Content-Type': contentType, 'X-Amz-Expires': '300' },
     }),
     { aws: { signQuery: true } }
   )
