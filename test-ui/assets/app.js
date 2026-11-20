@@ -221,6 +221,37 @@ function clearSession() {
   toast('ok', 'Signed out', 'Local session cleared — server refresh tokens still live until logout')
 }
 
+/** Copy any text to clipboard with a toast. */
+function copyValue(text, label) {
+  navigator.clipboard.writeText(text)
+    .then(() => toast('ok', 'Copied', (label || 'Value') + ' on clipboard'))
+    .catch(() => toast('err', 'Copy failed', 'Clipboard blocked by browser'))
+}
+
+/**
+ * Render records as cards that match the stats-grid card language.
+ * fields: [{label, get(row)?, key?, mono?, color?: row => cssColor, copy?: true}]
+ */
+function renderCards(containerId, rows, fields) {
+  const box = document.getElementById(containerId)
+  if (!box) return
+  if (!Array.isArray(rows) || rows.length === 0) {
+    box.innerHTML = '<div class="console-empty">// nothing here yet</div>'
+    return
+  }
+  box.innerHTML = rows.map((r) =>
+    '<div class="record">' + fields.map((f) => {
+      const v = f.get ? f.get(r) : r[f.key]
+      const shown = (v === null || v === undefined || v === '') ? '—' : String(v)
+      const style = f.color ? `color:${f.color(r)};` : ''
+      const cls = f.mono ? 'mono' : ''
+      const click = f.copy ? ` onclick="copyValue(this.textContent,'${esc(f.label)}')"` : ''
+      return `<div class="rec-row"><span class="rec-k">${esc(f.label)}</span>` +
+        `<span class="rec-v ${cls}" style="${style}"${click}>${esc(shown)}</span></div>`
+    }).join('') + '</div>'
+  ).join('')
+}
+
 /** Fill inputs from a JS object by id prefix. */
 function fillForm(prefix, obj) {
   Object.entries(obj || {}).forEach(([k, v]) => {

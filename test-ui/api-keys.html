@@ -35,6 +35,7 @@
       <div class="card-title">📋 Your keys</div>
       <div class="card-desc">GET /api/v1/auth/api-keys — metadata only. Hashes never leave the database.</div>
       <button class="btn primary" onclick="listKeys()">List keys</button>
+      <div class="record-grid" id="keys-grid"><div class="console-empty">// list keys to see the cards</div></div>
       <div class="divider"></div>
       <div class="field"><label>Active key in this browser (X-API-Key)</label><input class="input" id="ky-active" placeholder="sk_live_…"></div>
       <div class="row">
@@ -115,6 +116,25 @@
   async function listKeys() {
     const r = await api('GET', '/api/v1/auth/api-keys')
     consoleLog('console', 'GET', '/api/v1/auth/api-keys', r)
+    const rows = r.data && (r.data.keys || r.data)
+    renderCards('keys-grid', Array.isArray(rows) ? rows : [], [
+      { label: 'name', get: (k) => k.name || 'unnamed-key' },
+      { label: 'permissions', get: (k) => Array.isArray(k.permissions) ? k.permissions.join(', ') : (k.permissions || '—') },
+      { label: 'status', get: (k) => k.revoked_at ? 'REVOKED' : (k.is_active === 0 ? 'INACTIVE' : 'ACTIVE'), color: (k) => k.revoked_at || k.is_active === 0 ? 'var(--red)' : 'var(--green)' },
+      { label: 'created', get: (k) => fmtK(k.created_at) },
+      { label: 'expires', get: (k) => fmtK(k.expires_at) },
+      { label: 'key id (copy)', key: 'id', mono: true, copy: true },
+    ])
+  }
+  /** Short, readable timestamp: 20 Nov 2026, 07:22 */
+  function fmtK(ts) {
+    if (!ts) return 'never'
+    const d = new Date(ts)
+    if (isNaN(d)) return String(ts)
+    const day = String(d.getDate()).padStart(2, '0')
+    const mon = d.toLocaleString('en', { month: 'short' })
+    const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    return `${day} ${mon} ${d.getFullYear()}, ${time}`
   }
   function saveActiveKey() {
     Store.apiKey = g('ky-active')

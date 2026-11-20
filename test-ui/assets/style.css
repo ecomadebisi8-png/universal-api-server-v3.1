@@ -269,6 +269,25 @@ textarea.input { resize: vertical; min-height: 72px; }
 .stat .v.green { color: var(--green); }
 .stat .s { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
+/* ---------- Record cards (same card language as .stat) ---------- */
+.record-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; margin-top: 6px; }
+.record {
+  background: var(--bg-2); border: 1px solid var(--border);
+  border-radius: 12px; padding: 12px 14px;
+  transition: border-color .12s ease;
+}
+.record:hover { border-color: var(--border-strong); }
+.rec-row {
+  display: flex; justify-content: space-between; align-items: baseline; gap: 14px;
+  padding: 5px 0; border-bottom: 1px dashed rgba(110,168,255,0.09); font-size: 12.5px;
+}
+.rec-row:last-child { border-bottom: 0; }
+.rec-k { color: var(--muted); flex: none; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; }
+.rec-v { text-align: right; word-break: break-all; }
+.rec-v.mono { font-family: var(--mono); font-size: 11px; color: var(--cyan); }
+.rec-v[onclick] { cursor: pointer; }
+.rec-v[onclick]:hover { text-decoration: underline; }
+
 /* ---------- Toasts ---------- */
 .toasts { position: fixed; bottom: 22px; right: 22px; z-index: 100; display: flex; flex-direction: column; gap: 10px; }
 .toast {

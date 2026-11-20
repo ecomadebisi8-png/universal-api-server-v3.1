@@ -51,14 +51,16 @@
       <button class="btn primary" onclick="adminLogs()">Load logs</button>
       <input class="input" id="lg-limit" value="25" style="max-width:110px">
     </div>
+    <div class="record-grid" id="logs-grid"><div class="console-empty">// load logs to see the cards</div></div>
   </div>
 
   <div class="card">
     <div class="card-title">👥 Users & roles</div>
-    <div class="card-desc">GET /api/v1/admin/users · POST /api/v1/admin/users/:id/role — role is 'admin' or 'user'. Changes take effect on that user's next login (the role is baked into issued tokens).</div>
+    <div class="card-desc">GET /api/v1/admin/users · POST /api/v1/admin/users/:id/role — role is 'admin' or 'user'. Changes take effect on that user's next login (the role is baked into issued tokens). Click an ID to copy it.</div>
     <div class="row">
       <button class="btn primary" onclick="adminUsers()">Load users</button>
     </div>
+    <div class="record-grid" id="users-grid"><div class="console-empty">// load users to see the cards</div></div>
     <div class="divider"></div>
     <div class="row">
       <input class="input" id="rl-id" placeholder="user id">
@@ -126,17 +128,42 @@
     const limit = g('lg-limit') || '25'
     const r = await api('GET', `/api/v1/admin/logs?limit=${limit}`)
     consoleLog('console', 'GET', '/api/v1/admin/logs', r)
+    const rows = r.data && (r.data.logs || r.data)
+    renderCards('logs-grid', Array.isArray(rows) ? rows : [], [
+      { label: 'method', get: (l) => `${l.method || ''}`.trim(), color: (l) => l.status >= 400 ? 'var(--red)' : 'var(--green)' },
+      { label: 'path', get: (l) => `${l.path || ''}${l.status ? '  →  ' + l.status : ''}` },
+      { label: 'time', get: (l) => fmtTs(l.created_at) },
+      { label: 'ip', key: 'ip', mono: true, copy: true },
+    ])
   }
   async function adminUsers() {
     const r = await api('GET', '/api/v1/admin/users')
     consoleLog('console', 'GET', '/api/v1/admin/users', r)
+    const rows = r.data && (r.data.users || r.data)
+    renderCards('users-grid', Array.isArray(rows) ? rows : [], [
+      { label: 'email', key: 'email' },
+      { label: 'role', get: (u) => (u.role || 'user').toUpperCase(), color: (u) => u.role === 'admin' ? 'var(--cyan)' : 'var(--muted)' },
+      { label: 'created', get: (u) => fmtTs(u.created_at) },
+      { label: 'user id', key: 'id', mono: true, copy: true },
+    ])
   }
   async function changeRole() {
     const id = g('rl-id')
     const role = document.getElementById('rl-role').value
-    if (!id) return toast('err', 'No user id', 'Load users and paste an id')
+    if (!id) return toast('err', 'No user id', 'Load users and copy an id, or paste one')
     const r = await api('POST', `/api/v1/admin/users/${id}/role`, { role })
     consoleLog('console', 'POST', '/api/v1/admin/users/' + id + '/role', r)
+    if (r.status === 200) { toast('ok', 'Role updated', `User is now '${role}'`); adminUsers() }
+  }
+  /** Short, readable timestamp: 20 Nov 2026, 07:22 */
+  function fmtTs(ts) {
+    if (!ts) return '—'
+    const d = new Date(ts)
+    if (isNaN(d)) return String(ts)
+    const day = String(d.getDate()).padStart(2, '0')
+    const mon = d.toLocaleString('en', { month: 'short' })
+    const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    return `${day} ${mon} ${d.getFullYear()}, ${time}`
   }
 </script>
 </body>

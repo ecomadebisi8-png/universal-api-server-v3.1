@@ -18,8 +18,8 @@ enabled = true
 
 [[d1_databases]]
 binding = "DB"
-database_name = "universal-api-db"
-database_id = "7485bcbd-91cc-4c5e-98a0-282e84b0c153"
+database_name = "universal-api-db-v3"
+database_id = "493d267b-4661-40ee-9d3f-cf2e9083a5a3"
 
 # Daily housekeeping: prune old api_logs (30d) and stale rate-limit rows
 [triggers]

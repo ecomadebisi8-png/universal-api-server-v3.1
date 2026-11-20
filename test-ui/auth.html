@@ -47,6 +47,7 @@
         <button class="btn primary" onclick="me()">Check token</button>
         <button class="btn ghost" onclick="meNoAuth()">Without token (401)</button>
       </div>
+      <div class="record-grid" id="me-grid"><div class="console-empty">// check token to see your identity card</div></div>
     </div>
 
     <!-- Refresh -->
@@ -153,6 +154,24 @@
   async function me() {
     const r = await api('GET', '/api/v1/auth/me')
     consoleLog('console', 'GET', '/api/v1/auth/me', r)
+    const u = r.data && (r.data.user || r.data)
+    const row = u && u.email ? u : null
+    renderCards('me-grid', row ? [row] : [], [
+      { label: 'email', key: 'email' },
+      { label: 'role', get: (x) => (x.role || 'user').toUpperCase(), color: (x) => x.role === 'admin' ? 'var(--cyan)' : 'var(--muted)' },
+      { label: 'user id', key: 'id', mono: true, copy: true },
+      { label: 'member since', get: (x) => fmtA(x.created_at) },
+    ])
+  }
+  /** Short, readable timestamp: 20 Nov 2026, 07:22 */
+  function fmtA(ts) {
+    if (!ts) return '—'
+    const d = new Date(ts)
+    if (isNaN(d)) return String(ts)
+    const day = String(d.getDate()).padStart(2, '0')
+    const mon = d.toLocaleString('en', { month: 'short' })
+    const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    return `${day} ${mon} ${d.getFullYear()}, ${time}`
   }
   async function meNoAuth() {
     const r = await api('GET', '/api/v1/auth/me', null, { noAuth: true })

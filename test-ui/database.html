@@ -35,6 +35,7 @@
         <button class="btn primary" onclick="listItems()">List all</button>
         <button class="btn ghost" onclick="listNoAuth()">Without auth (401)</button>
       </div>
+      <div class="record-grid" id="items-grid"><div class="console-empty">// list items to see the cards</div></div>
       <div class="divider"></div>
       <div class="field"><label>Get by ID</label>
         <div class="row">
@@ -86,6 +87,22 @@
   async function listItems() {
     const r = await api('GET', '/api/v1/db/items')
     consoleLog('console', 'GET', '/api/v1/db/items', r)
+    const rows = r.data && (r.data.items || r.data)
+    renderCards('items-grid', Array.isArray(rows) ? rows : [], [
+      { label: 'item id', key: 'id', mono: true, copy: true },
+      { label: 'name', key: 'name' },
+      { label: 'created', get: (i) => fmtTs2(i.created_at) },
+    ])
+  }
+  /** Short, readable timestamp: 20 Nov 2026, 07:22 */
+  function fmtTs2(ts) {
+    if (!ts) return '—'
+    const d = new Date(ts)
+    if (isNaN(d)) return String(ts)
+    const day = String(d.getDate()).padStart(2, '0')
+    const mon = d.toLocaleString('en', { month: 'short' })
+    const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })
+    return `${day} ${mon} ${d.getFullYear()}, ${time}`
   }
   async function listNoAuth() {
     const r = await api('GET', '/api/v1/db/items', null, { noAuth: true })
