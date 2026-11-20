@@ -36,6 +36,8 @@ export function b2PublicUrl(env: B2Env, key: string): string {
 }
 
 export const AVATAR_MAX_BYTES = 5 * 1024 * 1024 // 5 MB — avatars only
+/** How long a presigned upload URL stays valid (seconds). */
+export const AVATAR_URL_EXPIRY_SECONDS = 300
 const ALLOWED_AVATAR_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'])
 
 export function avatarTypeAllowed(contentType: string): boolean {
@@ -64,16 +66,18 @@ export async function presignAvatarUpload(
   const ext = avatarExtFor(contentType)
   const key = `avatars/${userId}-${crypto.randomUUID()}.${ext}`
   const objectUrl = b2PublicUrl(env, key)
-  // aws4fetch passes request headers into the presigned query string, so this
-  // header is how we cap the window — without it the URL lives for 24 hours.
+  // aws4fetch only honours a pre-set X-Amz-Expires query parameter — a request
+  // header of that name is silently dropped, leaving the default 24h window.
+  const presignTarget = new URL(objectUrl)
+  presignTarget.searchParams.set('X-Amz-Expires', String(AVATAR_URL_EXPIRY_SECONDS))
   const signed = await clientFor(env).sign(
-    new Request(objectUrl, {
+    new Request(presignTarget.toString(), {
       method: 'PUT',
-      headers: { 'Content-Type': contentType, 'X-Amz-Expires': '300' },
+      headers: { 'Content-Type': contentType },
     }),
     { aws: { signQuery: true } }
   )
-  return { uploadUrl: signed.url, publicUrl: objectUrl, key, expiresIn: 300 }
+  return { uploadUrl: signed.url, publicUrl: objectUrl, key, expiresIn: AVATAR_URL_EXPIRY_SECONDS }
 }
 
 /**
