@@ -79,6 +79,13 @@ export async function ensureAuthTables(db: D1Database) {
     // column already exists on a v3 database
   }
 
+  // v3.2 migration: per-user avatar URL (profile pictures live in B2, not D1)
+  try {
+    await db.prepare(`ALTER TABLE users ADD COLUMN avatar_url TEXT`).run()
+  } catch {
+    // column already exists on a v3.2 database
+  }
+
   // v3.1 migrations: OTP codes move from plaintext to salted hashes + attempt counter
   try {
     await db.prepare(`ALTER TABLE otp_codes ADD COLUMN code_hash TEXT NOT NULL DEFAULT ''`).run()
@@ -167,6 +174,16 @@ export async function createUser(db: D1Database, email: string, passwordHash: st
 
 export async function updateUserPassword(db: D1Database, userId: string, passwordHash: string) {
   await db.prepare(`UPDATE users SET password_hash = ?, updated_at = datetime('now') WHERE id = ?`).bind(passwordHash, userId).run()
+}
+
+/** Profile row for the signed-in user (avatar + join date). */
+export async function getUserProfile(db: D1Database, userId: string): Promise<{ avatar_url: string | null; created_at: string | null } | null> {
+  return await db.prepare(`SELECT avatar_url, created_at FROM users WHERE id = ?`).bind(userId).first<{ avatar_url: string | null; created_at: string | null }>()
+}
+
+/** Set or clear (null) the user's avatar URL. */
+export async function setUserAvatar(db: D1Database, userId: string, url: string | null) {
+  await db.prepare(`UPDATE users SET avatar_url = ?, updated_at = datetime('now') WHERE id = ?`).bind(url, userId).run()
 }
 
 /* -- Refresh tokens -- */

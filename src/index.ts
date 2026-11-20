@@ -25,6 +25,7 @@ import admin from './routes/admin'
 import projectAlpha from './routes/project-alpha'
 import projectBeta from './routes/project-beta'
 import database from './routes/database'
+import profile from './routes/profile'
 
 const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 
@@ -86,6 +87,7 @@ app.route('/api/v1/admin', admin)
 app.route('/api/v1/project-alpha', projectAlpha)
 app.route('/api/v1/project-beta', projectBeta)
 app.route('/api/v1/db', database)
+app.route('/api/v1/profile', profile)
 
 // Scheduled housekeeping: prune old api_logs (30d) and stale rate-limit rows.
 // Configured via [triggers] in wrangler.toml.

@@ -17,6 +17,11 @@ const Store = {
   set email(v) { localStorage.setItem('uas_email', v) },
   get apiKey() { return localStorage.getItem('uas_api_key') || '' },
   set apiKey(v) { localStorage.setItem('uas_api_key', v) },
+  get avatar() { return localStorage.getItem('uas_avatar') || '' },
+  set avatar(v) {
+    if (v) localStorage.setItem('uas_avatar', v)
+    else localStorage.removeItem('uas_avatar')
+  },
   clearSession() {
     localStorage.removeItem('uas_token')
     localStorage.removeItem('uas_refresh')
@@ -134,8 +139,41 @@ function captureTokens(data) {
     if (data.refresh_token) Store.refresh = data.refresh_token
     if (data.user?.email) Store.email = data.user.email
     renderTokenBar()
+    loadProfile() // pulls the stored avatar so every page can show it
     toast('ok', 'Session captured', `Signed in as ${data.user?.email || 'user'} — token stored locally`)
   }
+}
+
+/** Fetch the signed-in user's profile (avatar) from the API. */
+async function loadProfile() {
+  if (!Store.token) { Store.avatar = ''; renderTokenBar(); return null }
+  const r = await api('GET', '/api/v1/profile/me')
+  if (r.status === 200) {
+    Store.avatar = r.data?.avatar_url || ''
+    if (r.data?.user?.email) Store.email = r.data.user.email
+  }
+  renderTokenBar()
+  return r
+}
+
+/** Initials fallback for the avatar circle: "adebisi..." → "AD" */
+function initialsOf(email) {
+  const parts = String(email || '?').split('@')[0].split(/[._-]+/).filter(Boolean)
+  return ((parts[0]?.[0] || '?') + (parts[1]?.[0] || parts[0]?.[1] || '')).toUpperCase()
+}
+
+/** The little avatar circle shown in the token bar on every page. */
+function avatarHTML(size = 22) {
+  const avatarUrl = Store.avatar
+  const style = `width:${size}px;height:${size}px;font-size:${Math.round(size * 0.42)}px`
+  if (avatarUrl) return `<img class="avatar-img" src="${esc(avatarUrl)}" alt="" style="${style}" onerror="this.replaceWith(initialsSpan())">`
+  return `<span class="avatar-fallback" style="${style}">${esc(initialsOf(Store.email))}</span>`
+}
+function initialsSpan() {
+  const s = document.createElement('span')
+  s.className = 'avatar-fallback'
+  s.textContent = initialsOf(Store.email)
+  return s
 }
 
 /** Re-render the sticky token bar (present on every page). */
@@ -143,17 +181,20 @@ function renderTokenBar() {
   const chip = document.getElementById('token-chip')
   const dot = document.getElementById('token-dot')
   const who = document.getElementById('token-who')
+  const av = document.getElementById('token-avatar')
   if (!chip) return
   if (Store.token) {
     chip.textContent = Store.token
     chip.classList.remove('empty')
     dot?.classList.add('on')
     if (who) who.textContent = Store.email || 'signed in'
+    if (av) { av.innerHTML = avatarHTML(22); av.style.display = '' }
   } else {
     chip.textContent = 'no token — login or register to capture one'
     chip.classList.add('empty')
     dot?.classList.remove('on')
     if (who) who.textContent = 'guest'
+    if (av) { av.innerHTML = ''; av.style.display = 'none' }
   }
 }
 
@@ -166,6 +207,7 @@ function renderChrome(active) {
     ['api-keys.html', 'API Keys'],
     ['sandbox.html', 'Sandbox'],
     ['database.html', 'Database'],
+    ['profile.html', 'Profile'],
     ['admin.html', 'Admin'],
   ]
   const topbar = document.createElement('header')
@@ -190,12 +232,26 @@ function renderChrome(active) {
     <span class="token-dot" id="token-dot"></span>
     <span class="label">Session</span>
     <span class="token-chip empty" id="token-chip"></span>
+    <span id="token-avatar" style="display:none;flex:none"></span>
     <span class="small muted" id="token-who">guest</span>
     <span class="spacer"></span>
     <button class="btn small ghost" onclick="copyToken()">Copy token</button>
     <button class="btn small danger" onclick="clearSession()">Sign out</button>`
   const shell = document.querySelector('.shell')
   if (shell) shell.prepend(bar)
+
+  // Favicon injected here so every console page gets it (local + GitHub Pages)
+  if (!document.querySelector('link[rel="icon"]')) {
+    const fav = document.createElement('link')
+    fav.rel = 'icon'
+    fav.type = 'image/svg+xml'
+    fav.href = 'assets/favicon.svg'
+    document.head.appendChild(fav)
+    const favFallback = document.createElement('link')
+    favFallback.rel = 'alternate icon'
+    favFallback.href = 'favicon.ico'
+    document.head.appendChild(favFallback)
+  }
 
   const toasts = document.createElement('div')
   toasts.className = 'toasts'
@@ -270,4 +326,5 @@ function readJSON(id) {
 
 document.addEventListener('DOMContentLoaded', () => {
   renderChrome(document.body.dataset.page || '')
+  if (Store.token) loadProfile() // re-hydrate the avatar on every page load
 })

@@ -23,6 +23,14 @@ export type Bindings = {
   ADMIN_EMAILS?: string
   /** Timezone for pretty timestamps (health endpoint etc.) */
   DISPLAY_TIMEZONE?: string
+  /** Backblaze B2 (S3-compatible) credentials — all are worker secrets */
+  B2_KEY_ID?: string
+  B2_APP_KEY?: string
+  B2_BUCKET?: string
+  /** S3 endpoint host, e.g. s3.us-west-004.backblazeb2.com */
+  B2_ENDPOINT?: string
+  /** Bucket region, e.g. us-west-004 */
+  B2_REGION?: string
 }
 
 export type Variables = {
