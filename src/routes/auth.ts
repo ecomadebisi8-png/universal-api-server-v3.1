@@ -12,13 +12,14 @@ import {
   verifyJWT,
 } from '../lib/jwt'
 import { hashPassword, verifyPassword } from '../lib/password'
-import { generateOTP, hashApiKey } from '../lib/random'
-import { parseJson } from '../lib/request'
+import { generateOTP, hashApiKey, hashOtp } from '../lib/random'
+import { isValidEmail, parseJson } from '../lib/request'
 import {
+  bumpOtpAttempts,
   createUser,
   deleteAllUserRefreshTokens,
   deleteRefreshToken,
-  ensureAuthTables,
+  ensureAuthTablesOnce,
   getUserByEmail,
   getUserById,
   getRefreshToken,
@@ -35,7 +36,7 @@ const auth = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 auth.get('/', (c) => {
   return c.json({
     module: 'auth',
-    version: 'v3',
+    version: 'v3.1',
     status: 'active',
     endpoints: [
       'POST /api/v1/auth/register',
@@ -45,9 +46,9 @@ auth.get('/', (c) => {
       'GET  /api/v1/auth/me',
       'POST /api/v1/auth/send-otp',
       'POST /api/v1/auth/verify-otp',
-            'POST /api/v1/auth/change-password',
-            'POST /api/v1/auth/logout-all',
-          ],
+      'POST /api/v1/auth/change-password',
+      'POST /api/v1/auth/logout-all',
+    ],
   })
 })
 
@@ -57,8 +58,14 @@ auth.post('/register', async (c) => {
   if (!body?.email || !body.password) {
     return c.json({ error: 'Email and password required' }, 400)
   }
+  if (!isValidEmail(body.email)) {
+    return c.json({ error: 'Invalid email format' }, 400)
+  }
+  if (body.password.length < 8) {
+    return c.json({ error: 'Password must be at least 8 characters' }, 400)
+  }
 
-  await ensureAuthTables(c.env.DB)
+  await ensureAuthTablesOnce(c.env.DB)
 
   const existing = await getUserByEmail(c.env.DB, body.email)
   if (existing) {
@@ -66,10 +73,10 @@ auth.post('/register', async (c) => {
   }
 
   const passwordHash = await hashPassword(body.password)
-    const userId = await createUser(c.env.DB, body.email, passwordHash)
+  const userId = await createUser(c.env.DB, body.email, passwordHash)
 
-    const accessToken = await generateAccessToken({ sub: userId, email: body.email, role: 'user' }, c.env.JWT_SECRET)
-    const refreshToken = await generateRefreshToken({ sub: userId, email: body.email }, c.env.JWT_SECRET)
+  const accessToken = await generateAccessToken({ sub: userId, email: body.email, role: 'user' }, c.env.JWT_SECRET)
+  const refreshToken = await generateRefreshToken({ sub: userId, email: body.email }, c.env.JWT_SECRET)
   const refreshHash = await hashApiKey(refreshToken)
   const refreshExpires = new Date(Date.now() + JWT_REFRESH_TTL_MS).toISOString()
   await storeRefreshToken(c.env.DB, userId, refreshHash, refreshExpires)
@@ -92,7 +99,7 @@ auth.post('/login', async (c) => {
     return c.json({ error: 'Email and password required' }, 400)
   }
 
-  await ensureAuthTables(c.env.DB)
+  await ensureAuthTablesOnce(c.env.DB)
 
   const user = await getUserByEmail(c.env.DB, body.email)
   if (!user) {
@@ -207,6 +214,9 @@ auth.post('/change-password', async (c) => {
   if (body.new_password.length < 8) {
     return c.json({ error: 'New password must be at least 8 characters' }, 400)
   }
+  if (body.new_password === body.current_password) {
+    return c.json({ error: 'New password must differ from the current password' }, 400)
+  }
 
   const user = await getUserById(c.env.DB, payload.sub)
   if (!user) {
@@ -254,20 +264,31 @@ auth.post('/send-otp', async (c) => {
   if (!body?.email) {
     return c.json({ error: 'Email required' }, 400)
   }
+  if (!isValidEmail(body.email)) {
+    return c.json({ error: 'Invalid email format' }, 400)
+  }
 
-  await ensureAuthTables(c.env.DB)
+  await ensureAuthTablesOnce(c.env.DB)
 
   const code = generateOTP()
+  const codeHash = await hashOtp(body.email, code)
   const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString()
-  await storeOTP(c.env.DB, body.email, code, expiresAt)
+  await storeOTP(c.env.DB, body.email, codeHash, expiresAt)
 
   await logRequest(c.env.DB, '/api/v1/auth/send-otp', 'POST', c.req.header('CF-Connecting-IP') ?? 'unknown', 200)
+
+  // The code is only echoed in development (explicit opt-in via DEV_OTP_ECHO,
+  // or ENVIRONMENT not 'production'). Production never leaks it in responses.
+  const echoCode = c.env.DEV_OTP_ECHO === 'true' || c.env.ENVIRONMENT !== 'production'
 
   return c.json({
     status: 'otp_sent',
     email: body.email,
-    otp_code: code, // Development only - remove in production
+    ...(echoCode ? { otp_code: code } : {}),
     expires_in: 600,
+    note: echoCode
+      ? 'Dev mode: code echoed in response. Hook up an email provider before production use.'
+      : 'Code delivered out-of-band. It expires in 10 minutes.',
   })
 })
 
@@ -278,10 +299,12 @@ auth.post('/verify-otp', async (c) => {
     return c.json({ error: 'Email and code required' }, 400)
   }
 
-  await ensureAuthTables(c.env.DB)
+  await ensureAuthTablesOnce(c.env.DB)
 
-  const otp = await verifyOTP(c.env.DB, body.email, body.code)
+  const otp = await verifyOTP(c.env.DB, body.email, await hashOtp(body.email, body.code))
   if (!otp) {
+    // Brute-force guard: count the attempt, the code dies after 5 tries
+    await bumpOtpAttempts(c.env.DB, body.email)
     return c.json({ error: 'Invalid or expired OTP' }, 401)
   }
 

@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Auth — Universal API Server v3.1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-page="auth.html">
+<div class="shell">
+
+  <section class="hero">
+    <h1>Auth <span class="grad">module</span></h1>
+    <p>Register, login, token rotation, logout, password change and OTP. Successful logins capture tokens into the session bar automatically.</p>
+  </section>
+
+  <div class="grid two">
+    <!-- Register -->
+    <div class="card">
+      <div class="card-title">✨ Register</div>
+      <div class="card-desc">POST /api/v1/auth/register — min 8 chars, valid email. Returns a full token pair.</div>
+      <div class="field"><label>Email</label><input class="input" id="rg-email" placeholder="you@example.com"></div>
+      <div class="field"><label>Password</label><input class="input" id="rg-password" type="text" placeholder="min 8 characters"></div>
+      <div class="row">
+        <button class="btn primary" onclick="register()">Create account</button>
+        <button class="btn ghost" onclick="prefillLogin()">Reuse for login</button>
+      </div>
+    </div>
+
+    <!-- Login -->
+    <div class="card">
+      <div class="card-title">🔑 Login</div>
+      <div class="card-desc">POST /api/v1/auth/login — issues a fresh token pair and a rotated refresh token.</div>
+      <div class="field"><label>Email</label><input class="input" id="lg-email" placeholder="you@example.com"></div>
+      <div class="field"><label>Password</label><input class="input" id="lg-password" placeholder="your password"></div>
+      <button class="btn primary" onclick="login()">Sign in</button>
+    </div>
+
+    <!-- Me -->
+    <div class="card">
+      <div class="card-title">👤 Who am I</div>
+      <div class="card-desc">GET /api/v1/auth/me — verifies the session token and echoes the payload.</div>
+      <div class="row">
+        <button class="btn primary" onclick="me()">Check token</button>
+        <button class="btn ghost" onclick="meNoAuth()">Without token (401)</button>
+      </div>
+    </div>
+
+    <!-- Refresh -->
+    <div class="card">
+      <div class="card-title">🔄 Refresh & rotate</div>
+      <div class="card-desc">POST /api/v1/auth/refresh — old refresh tokens die on use (single-use rotation).</div>
+      <div class="field"><label>Refresh token (prefills from session)</label><textarea class="input" id="rf-token" rows="2"></textarea></div>
+      <div class="row">
+        <button class="btn primary" onclick="refresh()">Rotate</button>
+        <button class="btn ghost" onclick="reuseOld()">Reuse old (401)</button>
+      </div>
+    </div>
+
+    <!-- Logout -->
+    <div class="card">
+      <div class="card-title">🚪 Logout</div>
+      <div class="card-desc">POST /api/v1/auth/logout — kills one refresh token · /logout-all — kills every session for the user.</div>
+      <div class="field"><label>Refresh token</label><textarea class="input" id="lo-token" rows="2"></textarea></div>
+      <div class="row">
+        <button class="btn" onclick="logout()">Logout this token</button>
+        <button class="btn danger" onclick="logoutAll()">Logout everywhere</button>
+      </div>
+    </div>
+
+    <!-- Change password -->
+    <div class="card">
+      <div class="card-title">🛡️ Change password</div>
+      <div class="card-desc">POST /api/v1/auth/change-password — revokes all refresh tokens. Same as old → 400. Min 8 chars.</div>
+      <div class="field"><label>Current password</label><input class="input" id="cp-current" type="text"></div>
+      <div class="field"><label>New password</label><input class="input" id="cp-new" type="text"></div>
+      <button class="btn primary" onclick="changePassword()">Change password</button>
+    </div>
+
+    <!-- OTP -->
+    <div class="card">
+      <div class="card-title">✉️ OTP codes</div>
+      <div class="card-desc">POST /api/v1/auth/send-otp · /verify-otp. Production never echoes the code — 10 min expiry, dead after 5 failed attempts.</div>
+      <div class="field"><label>Email</label><input class="input" id="ot-email" placeholder="you@example.com"></div>
+      <div class="field"><label>Code (only echoed when the server runs in dev mode)</label><input class="input" id="ot-code" placeholder="6-digit code"></div>
+      <div class="row">
+        <button class="btn" onclick="sendOtp()">Send code</button>
+        <button class="btn primary" onclick="verifyOtp()">Verify code</button>
+      </div>
+    </div>
+
+    <!-- Module map -->
+    <div class="card">
+      <div class="card-title">🗺️ Endpoint map</div>
+      <div class="card-desc">Everything in this module:</div>
+      <div class="endpoint-terms">
+        <div class="endpoint"><span class="chip post">POST</span><span class="path">/api/v1/auth/register</span></div>
+        <div class="endpoint"><span class="chip post">POST</span><span class="path">/api/v1/auth/login</span></div>
+        <div class="endpoint"><span class="chip post">POST</span><span class="path">/api/v1/auth/refresh</span></div>
+        <div class="endpoint"><span class="chip post">POST</span><span class="path">/api/v1/auth/logout</span></div>
+        <div class="endpoint"><span class="chip get">GET</span><span class="path">/api/v1/auth/me</span></div>
+        <div class="endpoint"><span class="chip post">POST</span><span class="path">/api/v1/auth/change-password</span></div>
+        <div class="endpoint"><span class="chip post">POST</span><span class="path">/api/v1/auth/logout-all</span></div>
+        <div class="endpoint"><span class="chip post">POST</span><span class="path">/api/v1/auth/send-otp</span></div>
+        <div class="endpoint"><span class="chip post">POST</span><span class="path">/api/v1/auth/verify-otp</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📡 Response console</div>
+    <div class="console">
+      <div class="console-head">
+        <span>live</span>
+        <span style="flex:1"></span>
+        <button class="btn small ghost" onclick="clearConsole()">clear</button>
+      </div>
+      <div class="console-body" id="console">
+        <div class="console-empty">// responses appear here</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+<script src="assets/app.js"></script>
+<script>
+  function clearConsole() { document.getElementById('console').innerHTML = '<div class="console-empty">// responses appear here</div>' }
+  const g = (id) => document.getElementById(id).value.trim()
+
+  async function register() {
+    const body = { email: g('rg-email'), password: g('rg-password') }
+    if (!body.email || !body.password) return toast('err', 'Missing fields', 'Email and password required')
+    const r = await api('POST', '/api/v1/auth/register', body)
+    consoleLog('console', 'POST', '/api/v1/auth/register', r)
+    captureTokens(r.data)
+  }
+  function prefillLogin() {
+    document.getElementById('lg-email').value = g('rg-email')
+    document.getElementById('lg-password').value = g('rg-password')
+    document.getElementById('ot-email').value = g('rg-email')
+    toast('ok', 'Copied to login form', '')
+  }
+  async function login() {
+    const body = { email: g('lg-email'), password: g('lg-password') }
+    if (!body.email || !body.password) return toast('err', 'Missing fields', 'Email and password required')
+    const r = await api('POST', '/api/v1/auth/login', body)
+    consoleLog('console', 'POST', '/api/v1/auth/login', r)
+    captureTokens(r.data)
+  }
+  async function me() {
+    const r = await api('GET', '/api/v1/auth/me')
+    consoleLog('console', 'GET', '/api/v1/auth/me', r)
+  }
+  async function meNoAuth() {
+    const r = await api('GET', '/api/v1/auth/me', null, { noAuth: true })
+    consoleLog('console', 'GET', '/api/v1/auth/me (no auth)', r)
+  }
+  async function refresh() {
+    const token = g('rf-token') || Store.refresh
+    if (!token) return toast('err', 'No refresh token', 'Login first, or paste one')
+    const r = await api('POST', '/api/v1/auth/refresh', { refresh_token: token })
+    consoleLog('console', 'POST', '/api/v1/auth/refresh', r)
+    captureTokens(r.data)
+  }
+  async function reuseOld() {
+    const token = g('rf-token') || Store.refresh
+    if (!token) return toast('err', 'No refresh token', 'Login first, or paste one')
+    const r = await api('POST', '/api/v1/auth/refresh', { refresh_token: token })
+    consoleLog('console', 'POST', '/api/v1/auth/refresh (old token)', r)
+  }
+  async function logout() {
+    const token = g('lo-token') || Store.refresh
+    const r = await api('POST', '/api/v1/auth/logout', token ? { refresh_token: token } : {})
+    consoleLog('console', 'POST', '/api/v1/auth/logout', r)
+  }
+  async function logoutAll() {
+    const r = await api('POST', '/api/v1/auth/logout-all')
+    consoleLog('console', 'POST', '/api/v1/auth/logout-all', r)
+    if (r.status === 200) { Store.clearSession(); renderTokenBar() }
+  }
+  async function changePassword() {
+    const body = { current_password: g('cp-current'), new_password: g('cp-new') }
+    if (!body.current_password || !body.new_password) return toast('err', 'Missing fields', 'Both passwords required')
+    const r = await api('POST', '/api/v1/auth/change-password', body)
+    consoleLog('console', 'POST', '/api/v1/auth/change-password', r)
+    if (r.status === 200) { Store.clearSession(); renderTokenBar(); toast('ok', 'Password changed', 'Sign in again to capture a fresh token') }
+  }
+  async function sendOtp() {
+    const body = { email: g('ot-email') }
+    if (!body.email) return toast('err', 'Missing email', '')
+    const r = await api('POST', '/api/v1/auth/send-otp', body)
+    consoleLog('console', 'POST', '/api/v1/auth/send-otp', r)
+    if (r.data?.otp_code) document.getElementById('ot-code').value = r.data.otp_code
+  }
+  async function verifyOtp() {
+    const body = { email: g('ot-email'), code: g('ot-code') }
+    if (!body.email || !body.code) return toast('err', 'Missing fields', 'Email and code required')
+    const r = await api('POST', '/api/v1/auth/verify-otp', body)
+    consoleLog('console', 'POST', '/api/v1/auth/verify-otp', r)
+    captureTokens(r.data)
+  }
+
+  // prefill refresh fields from the session on load
+  document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+      if (Store.refresh) document.getElementById('rf-token').value = Store.refresh
+      if (Store.refresh) document.getElementById('lo-token').value = Store.refresh
+    }, 50)
+  })
+</script>
+</body>
+</html>

@@ -16,11 +16,12 @@ import { prettyJSON } from 'hono/pretty-json'
 import type { Bindings, Variables } from './types'
 import { rateLimitMiddleware } from './middleware/rate-limit'
 import { requestLogMiddleware } from './middleware/logging'
-import { ensureAuthTables, pruneOldData } from './lib/db'
+import { ensureAuthTablesOnce, pruneOldData } from './lib/db'
 
 import health from './routes/health'
 import auth from './routes/auth'
 import apiKeys from './routes/api-keys'
+import admin from './routes/admin'
 import projectAlpha from './routes/project-alpha'
 import projectBeta from './routes/project-beta'
 import database from './routes/database'
@@ -50,19 +51,29 @@ app.use('*', prettyJSON())
 app.use('*', rateLimitMiddleware())
 app.use('*', requestLogMiddleware)
 
-// Idempotent table bootstrap on cold start (endpoints also self-heal)
+// Idempotent table bootstrap, once per isolate (endpoints also self-heal)
 app.use('*', async (c, next) => {
   try {
-    await ensureAuthTables(c.env.DB)
+    await ensureAuthTablesOnce(c.env.DB)
   } catch {
-    // best effort only
+    // best effort only; the memo resets so the next request retries
   }
   await next()
 })
 
+// Baseline security headers for a dynamic JSON API
+app.use('*', async (c, next) => {
+  await next()
+  c.res.headers.set('X-Content-Type-Options', 'nosniff')
+  c.res.headers.set('X-Frame-Options', 'DENY')
+  c.res.headers.set('Referrer-Policy', 'no-referrer')
+})
+
 app.onError((err, c) => {
   console.error('[API ERROR]', err)
-  return c.json({ error: 'Internal Server Error', message: err instanceof Error ? err.message : String(err) }, 500)
+  // Never leak internals in production; the full error is in the worker logs
+  const detail = c.env.ENVIRONMENT === 'production' ? undefined : (err instanceof Error ? err.message : String(err))
+  return c.json({ error: 'Internal Server Error', ...(detail ? { message: detail } : {}) }, 500)
 })
 
 app.notFound((c) => c.json({ error: 'Not Found', path: c.req.path }, 404))
@@ -71,6 +82,7 @@ app.notFound((c) => c.json({ error: 'Not Found', path: c.req.path }, 404))
 app.route('/', health)
 app.route('/api/v1/auth', auth)
 app.route('/api/v1/auth/api-keys', apiKeys)
+app.route('/api/v1/admin', admin)
 app.route('/api/v1/project-alpha', projectAlpha)
 app.route('/api/v1/project-beta', projectBeta)
 app.route('/api/v1/db', database)

@@ -1,13 +1,20 @@
 name = "universal-api-server-v3"
 main = "src/index.ts"
-compatibility_date = "2024-05-29"
+compatibility_date = "2026-01-01"
 compatibility_flags = ["nodejs_compat"]
 
 [vars]
 ENVIRONMENT = "production"
 API_VERSION = "v1"
+# Owner-only admin panel access (comma-separated emails)
+ADMIN_EMAILS = "ecomadebisi8@gmail.com,adebisitemiloluwa8@gmail.com"
+# Pretty timestamps in health responses
+DISPLAY_TIMEZONE = "Africa/Lagos"
 # JWT_SECRET is a worker secret: set via `wrangler secret put JWT_SECRET`
 # (never committed to wrangler.toml)
+
+[observability]
+enabled = true
 
 [[d1_databases]]
 binding = "DB"

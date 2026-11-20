@@ -11,3 +11,8 @@ export async function parseJson<T = any>(c: any): Promise<T | null> {
     return null
   }
 }
+
+/** Pragmatic email validation: one @, a dot in the domain, no spaces. */
+export function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.length <= 254
+}

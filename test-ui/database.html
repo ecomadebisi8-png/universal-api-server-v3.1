@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Database — Universal API Server v3.1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-page="database.html">
+<div class="shell">
+
+  <section class="hero">
+    <h1>D1 <span class="grad">items</span></h1>
+    <p>The generic resource table behind <span class="mono">/api/v1/db/items</span>. Since v3.1 reads and writes require a session — no more anonymous D1 writes.</p>
+  </section>
+
+  <div class="grid two">
+    <div class="card">
+      <div class="card-title">✨ Create item</div>
+      <div class="card-desc">POST /api/v1/db/items — non-empty, ≤ 200 chars.</div>
+      <div class="field"><label>Name</label><input class="input" id="it-name" placeholder="my item"></div>
+      <div class="row">
+        <button class="btn primary" onclick="createItem()">Create</button>
+        <button class="btn ghost" onclick="createItem('')">Empty name (400)</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🔎 Read items</div>
+      <div class="card-desc">GET /api/v1/db/items — newest first · GET /api/v1/db/items/:id — one item.</div>
+      <div class="row">
+        <button class="btn primary" onclick="listItems()">List all</button>
+        <button class="btn ghost" onclick="listNoAuth()">Without auth (401)</button>
+      </div>
+      <div class="divider"></div>
+      <div class="field"><label>Get by ID</label>
+        <div class="row">
+          <input class="input" id="it-id" placeholder="item id">
+          <button class="btn" style="flex:none" onclick="getItem()">Fetch</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🗑️ Delete item</div>
+      <div class="card-desc">DELETE /api/v1/db/items/:id — deleting a missing id returns a real 404.</div>
+      <div class="field"><label>Item ID</label>
+        <div class="row">
+          <input class="input" id="it-del" placeholder="item id">
+          <button class="btn danger" style="flex:none" onclick="deleteItem()">Delete</button>
+        </div>
+      </div>
+      <div class="hint">Tip: list items, then paste an ID here — delete it, then delete again to see the 404.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🧰 Table bootstrap</div>
+      <div class="card-desc">POST /api/v1/db/_init — idempotent. Also runs automatically once per isolate on cold start.</div>
+      <button class="btn" onclick="init()">Run bootstrap</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📡 Response console</div>
+    <div class="console">
+      <div class="console-head"><span>live</span><span style="flex:1"></span>
+        <button class="btn small ghost" onclick="clearConsole()">clear</button>
+      </div>
+      <div class="console-body" id="console"><div class="console-empty">// responses appear here</div></div>
+    </div>
+  </div>
+
+</div>
+<script src="assets/app.js"></script>
+<script>
+  function clearConsole() { document.getElementById('console').innerHTML = '<div class="console-empty">// responses appear here</div>' }
+  const g = (id) => (document.getElementById(id)?.value || '').trim()
+  async function createItem(override) {
+    const body = override === '' ? { name: '' } : { name: g('it-name') || 'untitled' }
+    const r = await api('POST', '/api/v1/db/items', body)
+    consoleLog('console', 'POST', '/api/v1/db/items', r)
+  }
+  async function listItems() {
+    const r = await api('GET', '/api/v1/db/items')
+    consoleLog('console', 'GET', '/api/v1/db/items', r)
+  }
+  async function listNoAuth() {
+    const r = await api('GET', '/api/v1/db/items', null, { noAuth: true })
+    consoleLog('console', 'GET', '/api/v1/db/items (no auth)', r)
+  }
+  async function getItem() {
+    const id = g('it-id')
+    if (!id) return toast('err', 'No id', 'Paste an item id')
+    const r = await api('GET', `/api/v1/db/items/${id}`)
+    consoleLog('console', 'GET', `/api/v1/db/items/${id}`, r)
+  }
+  async function deleteItem() {
+    const id = g('it-del')
+    if (!id) return toast('err', 'No id', 'Paste an item id')
+    const r = await api('DELETE', `/api/v1/db/items/${id}`)
+    consoleLog('console', 'DELETE', `/api/v1/db/items/${id}`, r)
+  }
+  async function init() {
+    const r = await api('POST', '/api/v1/db/_init', {})
+    consoleLog('console', 'POST', '/api/v1/db/_init', r)
+  }
+</script>
+</body>
+</html>

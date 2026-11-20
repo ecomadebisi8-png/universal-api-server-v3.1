@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Admin (owner-only) — Universal API Server v3.1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-page="admin.html">
+<div class="shell">
+
+  <section class="hero">
+    <h1>Admin <span class="grad">console</span></h1>
+    <p>Owner-only. A valid session token must belong to an email in the server's <span class="mono">ADMIN_EMAILS</span> list — currently <span class="mono">ecomadebisi8@gmail.com</span> and <span class="mono">adebisitemiloluwa8@gmail.com</span>. Everyone else gets 401 (no token) or 403 (valid user, not admin).</p>
+  </section>
+
+  <div class="card">
+    <div class="card-title">👑 Who am I</div>
+    <div class="card-desc">GET /api/v1/admin/me — the friendliest way to check whether your session is the owner's.</div>
+    <div class="row">
+      <button class="btn primary" onclick="adminMe()">Check admin identity</button>
+      <button class="btn ghost" onclick="adminMeNoAuth()">No token (401)</button>
+    </div>
+    <div class="hint">Seeing <span class="mono">403 Forbidden: admin access only</span>? Your logged-in account isn't in ADMIN_EMAILS. Register with one of the owner emails first.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📊 Live stats</div>
+    <div class="card-desc">GET /api/v1/admin/stats — counts across users, keys, sessions, logs, items, pending OTPs, throttled IPs.</div>
+    <button class="btn primary" onclick="adminStats()">Refresh stats</button>
+    <div class="divider"></div>
+    <div class="grid three" id="stats-grid" style="display:none">
+      <div class="stat"><div class="k">Users</div><div class="v accent" id="st-users">0</div></div>
+      <div class="stat"><div class="k">API keys</div><div class="v accent" id="st-keys">0</div></div>
+      <div class="stat"><div class="k">Live sessions</div><div class="v cyan" id="st-sessions">0</div></div>
+      <div class="stat"><div class="k">Requests 24h</div><div class="v cyan" id="st-reqs">0</div></div>
+      <div class="stat"><div class="k">Items</div><div class="v green" id="st-items">0</div></div>
+      <div class="stat"><div class="k">Pending OTPs</div><div class="v green" id="st-otp">0</div></div>
+      <div class="stat"><div class="k">Throttled IPs</div><div class="v" id="st-rl" style="color:var(--red)">0</div></div>
+      <div class="stat"><div class="k">Server version</div><div class="v" id="st-ver" style="font-size:19px">—</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📜 Request logs</div>
+    <div class="card-desc">GET /api/v1/admin/logs?limit=N — newest first, capped at 500.</div>
+    <div class="row">
+      <button class="btn primary" onclick="adminLogs()">Load logs</button>
+      <input class="input" id="lg-limit" value="25" style="max-width:110px">
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">👥 Users & roles</div>
+    <div class="card-desc">GET /api/v1/admin/users · POST /api/v1/admin/users/:id/role — role is 'admin' or 'user'. Changes take effect on that user's next login (the role is baked into issued tokens).</div>
+    <div class="row">
+      <button class="btn primary" onclick="adminUsers()">Load users</button>
+    </div>
+    <div class="divider"></div>
+    <div class="row">
+      <input class="input" id="rl-id" placeholder="user id">
+      <select class="input" id="rl-role" style="max-width:140px">
+        <option value="admin">admin</option>
+        <option value="user">user</option>
+      </select>
+      <button class="btn" style="flex:none" onclick="changeRole()">Set role</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🗺️ Endpoint map</div>
+    <div class="endpoint-terms">
+      <div class="endpoint"><span class="chip get">GET</span><span class="path">/api/v1/admin/me</span></div>
+      <div class="endpoint"><span class="chip get">GET</span><span class="path">/api/v1/admin/stats</span></div>
+      <div class="endpoint"><span class="chip get">GET</span><span class="path">/api/v1/admin/logs</span></div>
+      <div class="endpoint"><span class="chip get">GET</span><span class="path">/api/v1/admin/users</span></div>
+      <div class="endpoint"><span class="chip post">POST</span><span class="path">/api/v1/admin/users/:id/role</span></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📡 Response console</div>
+    <div class="console">
+      <div class="console-head"><span>live</span><span style="flex:1"></span>
+        <button class="btn small ghost" onclick="clearConsole()">clear</button>
+      </div>
+      <div class="console-body" id="console"><div class="console-empty">// responses appear here</div></div>
+    </div>
+  </div>
+
+</div>
+<script src="assets/app.js"></script>
+<script>
+  function clearConsole() { document.getElementById('console').innerHTML = '<div class="console-empty">// responses appear here</div>' }
+  const g = (id) => (document.getElementById(id)?.value || '').trim()
+
+  function showStats(counts, version) {
+    document.getElementById('stats-grid').style.display = ''
+    document.getElementById('st-users').textContent = counts.users ?? 0
+    document.getElementById('st-keys').textContent = counts.api_keys ?? 0
+    document.getElementById('st-sessions').textContent = counts.live_sessions ?? 0
+    document.getElementById('st-reqs').textContent = counts.requests_24h ?? 0
+    document.getElementById('st-items').textContent = counts.items ?? 0
+    document.getElementById('st-otp').textContent = counts.pending_otp ?? 0
+    document.getElementById('st-rl').textContent = counts.rate_limited_ips ?? 0
+    document.getElementById('st-ver').textContent = version || '—'
+  }
+
+  async function adminMe() {
+    const r = await api('GET', '/api/v1/admin/me')
+    consoleLog('console', 'GET', '/api/v1/admin/me', r)
+  }
+  async function adminMeNoAuth() {
+    const r = await api('GET', '/api/v1/admin/me', null, { noAuth: true })
+    consoleLog('console', 'GET', '/api/v1/admin/me (no token)', r)
+  }
+  async function adminStats() {
+    const r = await api('GET', '/api/v1/admin/stats')
+    consoleLog('console', 'GET', '/api/v1/admin/stats', r)
+    if (r.status === 200 && r.data?.counts) showStats(r.data.counts, r.data.server?.version)
+  }
+  async function adminLogs() {
+    const limit = g('lg-limit') || '25'
+    const r = await api('GET', `/api/v1/admin/logs?limit=${limit}`)
+    consoleLog('console', 'GET', '/api/v1/admin/logs', r)
+  }
+  async function adminUsers() {
+    const r = await api('GET', '/api/v1/admin/users')
+    consoleLog('console', 'GET', '/api/v1/admin/users', r)
+  }
+  async function changeRole() {
+    const id = g('rl-id')
+    const role = document.getElementById('rl-role').value
+    if (!id) return toast('err', 'No user id', 'Load users and paste an id')
+    const r = await api('POST', `/api/v1/admin/users/${id}/role`, { role })
+    consoleLog('console', 'POST', '/api/v1/admin/users/' + id + '/role', r)
+  }
+</script>
+</body>
+</html>

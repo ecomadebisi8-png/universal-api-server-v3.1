@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Status — Universal API Server v3.1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-page="status.html">
+<div class="shell">
+
+  <section class="hero">
+    <h1>Server <span class="grad">status</span></h1>
+    <p>The heartbeat endpoint. Pretty dates, live uptime, DB ping, environment badge.</p>
+  </section>
+
+  <div class="card">
+    <div class="card-title">💓 GET / <span class="pill green" id="live-pill">…</span></div>
+    <div class="card-desc">Polls every 5 seconds. Uptime is per-isolate on Workers — resets on cold starts, which is normal.</div>
+    <div class="grid three">
+      <div class="stat"><div class="k">Version</div><div class="v accent" id="h-version">—</div><div class="s" id="h-env">—</div></div>
+      <div class="stat"><div class="k">Server time</div><div class="v cyan" id="h-time" style="font-size:19px">—</div><div class="s" id="h-date">—</div></div>
+      <div class="stat"><div class="k">Uptime</div><div class="v green" id="h-uptime" style="font-size:19px">—</div><div class="s" id="h-uptimes">—</div></div>
+    </div>
+    <div class="divider"></div>
+    <div class="grid three">
+      <div class="stat"><div class="k">Database (D1)</div><div class="v" id="h-db" style="font-size:19px">—</div><div class="s">live ping</div></div>
+      <div class="stat"><div class="k">Timezone</div><div class="v" id="h-tz" style="font-size:19px">—</div><div class="s">pretty display</div></div>
+      <div class="stat"><div class="k">Raw timestamp</div><div class="v mono" id="h-ts" style="font-size:12px;word-break:break-all">—</div><div class="s">ISO 8601</div></div>
+    </div>
+    <div class="divider"></div>
+    <div class="row">
+      <button class="btn primary" onclick="ping()">Ping now</button>
+      <button class="btn" onclick="autoPoll()" id="poll-btn">Pause polling</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📡 Response console</div>
+    <div class="console">
+      <div class="console-head">
+        <span>live</span>
+        <span style="flex:1"></span>
+        <button class="btn small ghost" onclick="clearConsole()">clear</button>
+      </div>
+      <div class="console-body" id="console">
+        <div class="console-empty">// responses appear here</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🧪 Try the error paths</div>
+    <div class="card-desc">Handy for seeing behavior without signing in:</div>
+    <div class="endpoint">
+      <span class="chip get">GET</span><span class="path">/nope</span>
+      <span class="desc">unknown route → structured 404</span>
+      <span class="grow"></span>
+      <button class="btn small" onclick="hit('GET','/nope')">Send</button>
+    </div>
+    <div class="endpoint">
+      <span class="chip get">GET</span><span class="path">/api/v1/db/items</span>
+      <span class="desc">no token → 401</span>
+      <span class="grow"></span>
+      <button class="btn small" onclick="hit('GET','/api/v1/db/items')">Send</button>
+    </div>
+    <div class="endpoint">
+      <span class="chip get">GET</span><span class="path">/api/v1/admin/stats</span>
+      <span class="desc">no token → 401 · wrong user → 403</span>
+      <span class="grow"></span>
+      <button class="btn small" onclick="hit('GET','/api/v1/admin/stats')">Send</button>
+    </div>
+  </div>
+
+</div>
+<script src="assets/app.js"></script>
+<script>
+  let polling = true
+  let timer = null
+  let uptimeBase = 0
+  let uptimeFetchedAt = 0
+
+  async function ping() {
+    const r = await api('GET', '/')
+    consoleLog('console', 'GET', '/', r)
+    const d = r.data || {}
+    const pill = document.getElementById('live-pill')
+    pill.textContent = r.status === 200 ? 'online' : (r.netError ? 'unreachable' : 'degraded')
+    pill.className = 'pill ' + (r.status === 200 ? 'green' : 'red')
+    document.getElementById('h-version').textContent = d.version || '—'
+    document.getElementById('h-env').textContent = d.environment || '—'
+    document.getElementById('h-time').textContent = d.time || '—'
+    document.getElementById('h-date').textContent = d.date || ''
+    document.getElementById('h-uptime').textContent = d.uptime || '—'
+    document.getElementById('h-uptimes').textContent = `${d.uptime_seconds ?? 0}s since isolate boot`
+    document.getElementById('h-db').textContent = d.db || '—'
+    document.getElementById('h-tz').textContent = d.timezone || '—'
+    document.getElementById('h-ts').textContent = d.timestamp || '—'
+    uptimeBase = d.uptime_seconds || 0
+    uptimeFetchedAt = Date.now()
+  }
+
+  async function hit(method, path) {
+    const r = await api(method, path)
+    consoleLog('console', method, path, r)
+  }
+
+  function autoPoll() {
+    polling = !polling
+    document.getElementById('poll-btn').textContent = polling ? 'Pause polling' : 'Resume polling'
+    if (polling) {
+      timer = setInterval(ping, 5000)
+    } else if (timer) {
+      clearInterval(timer)
+    }
+  }
+
+  function clearConsole() {
+    document.getElementById('console').innerHTML = '<div class="console-empty">// responses appear here</div>'
+  }
+
+  // local ticking uptime between polls
+  setInterval(() => {
+    if (!uptimeFetchedAt) return
+    const local = Math.floor((Date.now() - uptimeFetchedAt) / 1000) + uptimeBase
+    const el = document.getElementById('h-uptime')
+    if (el && document.getElementById('live-pill').textContent === 'online') {
+      const dd = Math.floor(local / 86400), hh = Math.floor((local % 86400) / 3600), mm = Math.floor((local % 3600) / 60), ss = local % 60
+      el.textContent = dd > 0 ? `${dd}d ${hh}h ${mm}m ${ss}s` : hh > 0 ? `${hh}h ${mm}m ${ss}s` : mm > 0 ? `${mm}m ${ss}s` : `${ss}s`
+      document.getElementById('h-uptimes').textContent = `${local}s (live)`
+    }
+  }, 1000)
+
+  ping()
+  timer = setInterval(ping, 5000)
+</script>
+</body>
+</html>

@@ -47,10 +47,25 @@ apiKeys.post('/', async (c) => {
   }>(c)
   const { name, permissions, expires_in_days } = body ?? {}
 
-  const plainKey = generateApiKeyPlain()
-  const keyHash = await hashApiKey(plainKey)
-  const perms = permissions ?? ['read']
-  const expiresAt = expires_in_days ? new Date(Date.now() + expires_in_days * 24 * 60 * 60 * 1000).toISOString() : null
+    if (name !== undefined && (typeof name !== 'string' || name.length > 100)) {
+      return c.json({ error: 'name must be a string of 100 characters or fewer' }, 400)
+    }
+    if (permissions !== undefined) {
+      if (!Array.isArray(permissions) || permissions.some((p) => typeof p !== 'string' || p.length > 32)) {
+        return c.json({ error: 'permissions must be an array of short strings' }, 400)
+      }
+      if (!permissions.every((p) => ['read', 'write', 'admin'].includes(p))) {
+        return c.json({ error: "permissions may only contain 'read', 'write', or 'admin'" }, 400)
+      }
+    }
+    if (expires_in_days !== undefined && (!Number.isInteger(expires_in_days) || expires_in_days < 1 || expires_in_days > 365)) {
+      return c.json({ error: 'expires_in_days must be an integer between 1 and 365' }, 400)
+    }
+
+    const plainKey = generateApiKeyPlain()
+    const keyHash = await hashApiKey(plainKey)
+    const perms = permissions ?? ['read']
+    const expiresAt = expires_in_days ? new Date(Date.now() + expires_in_days * 24 * 60 * 60 * 1000).toISOString() : null
 
   await createApiKeyRow(c.env.DB, user.sub, name ?? 'unnamed-key', keyHash, perms, expiresAt)
 

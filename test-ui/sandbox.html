@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sandbox — Universal API Server v3.1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-page="sandbox.html">
+<div class="shell">
+
+  <section class="hero">
+    <h1>Project <span class="grad">sandboxes</span></h1>
+    <p>Alpha and Beta are identical protected playgrounds — JWT or API key required. The response echoes which identity you used.</p>
+  </section>
+
+  <div class="grid two">
+    <div class="card">
+      <div class="card-title">🅰️ Project Alpha</div>
+      <div class="card-desc">Protected sandbox — authOrApiKey middleware on every route.</div>
+      <div class="endpoint">
+        <span class="chip get">GET</span><span class="path">/api/v1/project-alpha</span>
+        <span class="desc">identity check</span><span class="grow"></span>
+        <button class="btn small" onclick="hit('GET','/api/v1/project-alpha')">Send</button>
+      </div>
+      <div class="endpoint">
+        <span class="chip get">GET</span><span class="path">/api/v1/project-alpha/items</span>
+        <span class="grow"></span>
+        <button class="btn small" onclick="hit('GET','/api/v1/project-alpha/items')">Send</button>
+      </div>
+      <div class="endpoint-terms">
+        <div class="endpoint">
+          <span class="chip post">POST</span><span class="path">/api/v1/project-alpha/items</span>
+          <span class="grow"></span>
+          <input class="input" id="al-name" placeholder="item name" style="max-width:150px">
+          <button class="btn small primary" onclick="hit('POST','/api/v1/project-alpha/items',{name:g('al-name')||'untitled'})">Create</button>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="row">
+        <button class="btn ghost" onclick="hitNoAuth('GET','/api/v1/project-alpha')">Without auth (401)</button>
+        <button class="btn ghost" onclick="hitKey('GET','/api/v1/project-alpha')">With API key</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🅱️ Project Beta</div>
+      <div class="card-desc">Same rules, different sandbox — handy for testing key scoping across projects.</div>
+      <div class="endpoint">
+        <span class="chip get">GET</span><span class="path">/api/v1/project-beta</span>
+        <span class="desc">identity check</span><span class="grow"></span>
+        <button class="btn small" onclick="hit('GET','/api/v1/project-beta')">Send</button>
+      </div>
+      <div class="endpoint">
+        <span class="chip get">GET</span><span class="path">/api/v1/project-beta/items</span>
+        <span class="grow"></span>
+        <button class="btn small" onclick="hit('GET','/api/v1/project-beta/items')">Send</button>
+      </div>
+      <div class="endpoint-terms">
+        <div class="endpoint">
+          <span class="chip post">POST</span><span class="path">/api/v1/project-beta/items</span>
+          <span class="grow"></span>
+          <input class="input" id="be-name" placeholder="item name" style="max-width:150px">
+          <button class="btn small primary" onclick="hit('POST','/api/v1/project-beta/items',{name:g('be-name')||'untitled'})">Create</button>
+        </div>
+      </div>
+      <div class="divider"></div>
+      <div class="row">
+        <button class="btn ghost" onclick="hitNoAuth('GET','/api/v1/project-beta')">Without auth (401)</button>
+        <button class="btn ghost" onclick="hitKeyKey('POST','/api/v1/project-beta/items',{name:'api-key-item'})">POST with API key</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🔍 How identity is resolved</div>
+    <div class="card-desc">The endpoint answers show whether you arrived as a <b>user</b> (JWT) or a <b>service</b> (API key):</div>
+    <pre class="mono small" style="background:rgba(5,7,15,.6);border:1px solid var(--border);border-radius:10px;padding:14px;overflow:auto">{
+  "project": "alpha",
+  "authenticated": true,
+  "user":    { "id": "…", "email": "you@example.com" },   // JWT path
+  "service": { "name": "…", "permissions": ["read","write"] } // API-key path
+}</pre>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📡 Response console</div>
+    <div class="console">
+      <div class="console-head"><span>live</span><span style="flex:1"></span>
+        <button class="btn small ghost" onclick="clearConsole()">clear</button>
+      </div>
+      <div class="console-body" id="console"><div class="console-empty">// responses appear here</div></div>
+    </div>
+  </div>
+
+</div>
+<script src="assets/app.js"></script>
+<script>
+  function clearConsole() { document.getElementById('console').innerHTML = '<div class="console-empty">// responses appear here</div>' }
+  const g = (id) => (document.getElementById(id)?.value || '').trim()
+  async function hit(method, path, body) {
+    const r = await api(method, path, body)
+    consoleLog('console', method, path, r)
+  }
+  async function hitNoAuth(method, path) {
+    const r = await api(method, path, null, { noAuth: true })
+    consoleLog('console', method, path + ' (no auth)', r)
+  }
+  async function hitKey(method, path) {
+    const r = await api(method, path, null, { useApiKey: true })
+    consoleLog('console', method, path + ' (API key)', r)
+  }
+  async function hitKeyKey(method, path, body) {
+    const r = await api(method, path, body, { useApiKey: true })
+    consoleLog('console', method, path + ' (API key)', r)
+  }
+</script>
+</body>
+</html>

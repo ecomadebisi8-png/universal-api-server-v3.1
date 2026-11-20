@@ -34,37 +34,6 @@ export async function jwtAuth(c: any, next: any) {
   await next()
 }
 
-/** Sets c.set('apiKey', ...) when a valid X-API-Key header is present, then continues. */
-export async function apiKeyAuth(c: any, next: any) {
-  const keyHeader = c.req.header('X-API-Key')
-  if (!keyHeader) {
-    await next()
-    return
-  }
-
-  const keyHash = await hashApiKey(keyHeader)
-  const row = await getApiKeyByHash(c.env.DB, keyHash)
-  if (!row) {
-    return c.json({ error: 'Invalid API key' }, 401)
-  }
-
-  const expiresAt = row.expires_at ? new Date(row.expires_at as string) : null
-  if (expiresAt && expiresAt <= new Date()) {
-    return c.json({ error: 'API key expired' }, 401)
-  }
-
-  const permissions = typeof row.permissions === 'string' ? JSON.parse(row.permissions) : (row.permissions as string[])
-
-  c.set('apiKey', {
-    id: row.id,
-    name: row.name,
-    permissions,
-  })
-
-  await updateApiKeyLastUsed(c.env.DB, row.id)
-  await next()
-}
-
 /** Requires either a valid access token OR a valid API key; 401 otherwise. */
 export async function authOrApiKey(c: any, next: any) {
   const authHeader = c.req.header('Authorization')

@@ -29,7 +29,8 @@ export async function ensureAuthTables(db: D1Database) {
     CREATE TABLE IF NOT EXISTS otp_codes (
       id         TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
       email      TEXT NOT NULL COLLATE NOCASE,
-      code       TEXT NOT NULL,
+      code_hash  TEXT NOT NULL DEFAULT '',
+      attempts   INTEGER NOT NULL DEFAULT 0,
       expires_at TEXT NOT NULL,
       used       INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -78,6 +79,25 @@ export async function ensureAuthTables(db: D1Database) {
     // column already exists on a v3 database
   }
 
+  // v3.1 migrations: OTP codes move from plaintext to salted hashes + attempt counter
+  try {
+    await db.prepare(`ALTER TABLE otp_codes ADD COLUMN code_hash TEXT NOT NULL DEFAULT ''`).run()
+  } catch {
+    // column already exists on a v3.1 database
+  }
+  try {
+    await db.prepare(`ALTER TABLE otp_codes ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0`).run()
+  } catch {
+    // column already exists on a v3.1 database
+  }
+  // Drop the legacy plaintext column: it is NOT NULL with no default, which
+  // breaks inserts once rows only carry code_hash. (Fresh DBs never create it.)
+  try {
+    await db.prepare(`ALTER TABLE otp_codes DROP COLUMN code`).run()
+  } catch {
+    // column already dropped (or never existed on a fresh v3.1 database)
+  }
+
   // Rate limit counters (per-IP, per-minute window)
   await db.prepare(`
     CREATE TABLE IF NOT EXISTS rate_limits (
@@ -97,11 +117,28 @@ export async function ensureAuthTables(db: D1Database) {
   await db.prepare(`CREATE INDEX IF NOT EXISTS idx_api_logs_created ON api_logs(created_at)`).run()
 }
 
+let bootstrapPromise: Promise<void> | null = null
+
+/**
+ * ensureAuthTables memoized per isolate. Every request previously ran ~13 D1
+ * write statements before serving; now it's once per cold start. A failed
+ * bootstrap resets the memo so the next request retries.
+ */
+export function ensureAuthTablesOnce(db: D1Database): Promise<void> {
+  if (!bootstrapPromise) {
+    bootstrapPromise = ensureAuthTables(db).catch((e) => {
+      bootstrapPromise = null
+      throw e
+    })
+  }
+  return bootstrapPromise
+}
+
 /* -- Row types -- */
 
 export type UserRow = { id: string; email: string; password_hash: string; role: string }
 export type RefreshTokenRow = { user_id: string; expires_at: string }
-export type OtpRow = { id: string; expires_at: string; used: number }
+export type OtpRow = { id: string; expires_at: string; used: number; attempts: number }
 export type ApiKeyRow = {
   id: string
   user_id: string | null
@@ -154,17 +191,30 @@ export async function deleteAllUserRefreshTokens(db: D1Database, userId: string)
 
 /* -- OTP codes -- */
 
-export async function storeOTP(db: D1Database, email: string, code: string, expiresAt: string) {
+export async function storeOTP(db: D1Database, email: string, codeHash: string, expiresAt: string) {
   await db.prepare(`UPDATE otp_codes SET used = 1 WHERE email = ? AND used = 0`).bind(email).run()
   await db.prepare(
-    `INSERT INTO otp_codes (email, code, expires_at) VALUES (?, ?, ?)`
-  ).bind(email, code, expiresAt).run()
+    `INSERT INTO otp_codes (email, code_hash, expires_at) VALUES (?, ?, ?)`
+  ).bind(email, codeHash, expiresAt).run()
 }
 
-export async function verifyOTP(db: D1Database, email: string, code: string): Promise<OtpRow | null> {
+export async function verifyOTP(db: D1Database, email: string, codeHash: string): Promise<OtpRow | null> {
   return await db.prepare(
-    `SELECT id, expires_at, used FROM otp_codes WHERE email = ? AND code = ? AND used = 0 ORDER BY created_at DESC LIMIT 1`
-  ).bind(email, code).first<OtpRow>()
+    `SELECT id, expires_at, used, attempts FROM otp_codes WHERE email = ? AND code_hash = ? AND used = 0 ORDER BY created_at DESC LIMIT 1`
+  ).bind(email, codeHash).first<OtpRow>()
+}
+
+/** Count a failed verify attempt; after OTP_MAX_ATTEMPTS the code is dead. */
+export async function bumpOtpAttempts(db: D1Database, email: string) {
+  await db.prepare(
+    `UPDATE otp_codes SET attempts = attempts + 1
+     WHERE email = ? AND used = 0 AND id = (
+       SELECT id FROM otp_codes WHERE email = ? AND used = 0 ORDER BY created_at DESC LIMIT 1
+     )`
+  ).bind(email, email).run()
+  await db.prepare(
+    `UPDATE otp_codes SET used = 1 WHERE email = ? AND used = 0 AND attempts >= 5`
+  ).bind(email).run()
 }
 
 export async function markOTPUsed(db: D1Database, otpId: string) {
@@ -220,9 +270,14 @@ export async function pruneOldData(db: D1Database, logRetentionDays = 30) {
     `DELETE FROM rate_limits WHERE window_start < ?`
   ).bind(nowMs - 24 * 60 * 60 * 1000).run()
 
+  const otpResult = await db.prepare(
+    `DELETE FROM otp_codes WHERE created_at < datetime('now', '-1 day')`
+  ).run()
+
   return {
     api_logs_deleted: logResult.meta?.changes ?? 0,
     rate_limits_deleted: rateResult.meta?.changes ?? 0,
+    otp_codes_deleted: otpResult.meta?.changes ?? 0,
   }
 }
 

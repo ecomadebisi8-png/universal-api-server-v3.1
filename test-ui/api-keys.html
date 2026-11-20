@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API Keys — Universal API Server v3.1</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-page="api-keys.html">
+<div class="shell">
+
+  <section class="hero">
+    <h1>API <span class="grad">keys</span></h1>
+    <p>Service-to-service credentials. The plaintext key is shown exactly once at creation — only its SHA-256 hash lives in D1.</p>
+  </section>
+
+  <div class="grid two">
+    <div class="card">
+      <div class="card-title">✨ Create a key</div>
+      <div class="card-desc">POST /api/v1/auth/api-keys — write methods require read+write (or admin) permissions.</div>
+      <div class="field"><label>Name</label><input class="input" id="ky-name" placeholder="my-service-key"></div>
+      <div class="field"><label>Permissions (comma-separated: read, write, admin)</label><input class="input" id="ky-perms" value="read,write"></div>
+      <div class="field"><label>Expires in days (1–365, optional)</label><input class="input" id="ky-expiry" placeholder="30"></div>
+      <div class="row">
+        <button class="btn primary" onclick="createKey()">Create key</button>
+        <button class="btn ghost" onclick="prefillReadonly()">Read-only preset</button>
+      </div>
+      <div class="hint">The new key is auto-saved into this browser session for X-API-Key calls. Save it somewhere safe too — it cannot be recovered.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📋 Your keys</div>
+      <div class="card-desc">GET /api/v1/auth/api-keys — metadata only. Hashes never leave the database.</div>
+      <button class="btn primary" onclick="listKeys()">List keys</button>
+      <div class="divider"></div>
+      <div class="field"><label>Active key in this browser (X-API-Key)</label><input class="input" id="ky-active" placeholder="sk_live_…"></div>
+      <div class="row">
+        <button class="btn" onclick="saveActiveKey()">Set active</button>
+        <button class="btn ghost" onclick="clearActiveKey()">Clear</button>
+      </div>
+      <div class="divider"></div>
+      <div class="field"><label>Revoke by ID</label><input class="input" id="ky-revoke" placeholder="key id"></div>
+      <button class="btn danger" onclick="revokeKey()">Revoke key</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🧪 Permission playground</div>
+      <div class="card-desc">Watch the API key rules bite: read-only key on a write endpoint → 403.</div>
+      <div class="endpoint">
+        <span class="chip get">GET</span><span class="path">/api/v1/project-alpha</span>
+        <span class="desc">using active key</span><span class="grow"></span>
+        <button class="btn small" onclick="hitKey('GET','/api/v1/project-alpha')">Send</button>
+      </div>
+      <div class="endpoint">
+        <span class="chip post">POST</span><span class="path">/api/v1/project-alpha/items</span>
+        <span class="desc">read-only key → 403</span><span class="grow"></span>
+        <button class="btn small" onclick="hitKey('POST','/api/v1/project-alpha/items', {name:'from-test-ui'})">Send</button>
+      </div>
+      <div class="endpoint">
+        <span class="chip get">GET</span><span class="path">/api/v1/project-alpha</span>
+        <span class="desc">using session JWT instead</span><span class="grow"></span>
+        <button class="btn small" onclick="hitJwt('GET','/api/v1/project-alpha')">Send</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🗺️ Endpoint map</div>
+      <div class="endpoint-terms">
+        <div class="endpoint"><span class="chip get">GET</span><span class="path">/api/v1/auth/api-keys</span><span class="grow"></span><span class="pill">list (masked)</span></div>
+        <div class="endpoint"><span class="chip post">POST</span><span class="path">/api/v1/auth/api-keys</span><span class="grow"></span><span class="pill green">create</span></div>
+        <div class="endpoint"><span class="chip delete">DEL</span><span class="path">/api/v1/auth/api-keys/:id</span><span class="grow"></span><span class="pill red">revoke</span></div>
+      </div>
+      <div class="hint">All three require a valid user JWT (API keys can't manage API keys).</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📡 Response console</div>
+    <div class="console">
+      <div class="console-head"><span>live</span><span style="flex:1"></span>
+        <button class="btn small ghost" onclick="clearConsole()">clear</button>
+      </div>
+      <div class="console-body" id="console"><div class="console-empty">// responses appear here</div></div>
+    </div>
+  </div>
+
+</div>
+<script src="assets/app.js"></script>
+<script>
+  function clearConsole() { document.getElementById('console').innerHTML = '<div class="console-empty">// responses appear here</div>' }
+  const g = (id) => document.getElementById(id).value.trim()
+
+  async function createKey() {
+    const name = g('ky-name')
+    const perms = g('ky-perms').split(',').map(s => s.trim()).filter(Boolean)
+    const expiry = g('ky-expiry')
+    const body = { name: name || 'unnamed-key', permissions: perms }
+    if (expiry) body.expires_in_days = parseInt(expiry, 10)
+    const r = await api('POST', '/api/v1/auth/api-keys', body)
+    consoleLog('console', 'POST', '/api/v1/auth/api-keys', r)
+    if (r.data?.key) {
+      Store.apiKey = r.data.key
+      document.getElementById('ky-active').value = r.data.key
+      toast('ok', 'Key created & activated', 'Copied into the active key field below')
+    }
+  }
+  function prefillReadonly() {
+    document.getElementById('ky-name').value = 'readonly-key'
+    document.getElementById('ky-perms').value = 'read'
+    toast('ok', 'Read-only preset', 'Now create it and try a POST in the playground')
+  }
+  async function listKeys() {
+    const r = await api('GET', '/api/v1/auth/api-keys')
+    consoleLog('console', 'GET', '/api/v1/auth/api-keys', r)
+  }
+  function saveActiveKey() {
+    Store.apiKey = g('ky-active')
+    toast(Store.apiKey ? 'ok' : 'err', Store.apiKey ? 'Active key set' : 'Cleared', Store.apiKey ? 'X-API-Key calls will use it' : '')
+  }
+  function clearActiveKey() {
+    Store.apiKey = ''
+    document.getElementById('ky-active').value = ''
+    toast('ok', 'Active key cleared', '')
+  }
+  async function revokeKey() {
+    const id = g('ky-revoke')
+    if (!id) return toast('err', 'No key id', 'Paste a key id to revoke')
+    const r = await api('DELETE', `/api/v1/auth/api-keys/${id}`)
+    consoleLog('console', 'DELETE', '/api/v1/auth/api-keys/' + id, r)
+  }
+  async function hitKey(method, path, body) {
+    const r = await api(method, path, body, { useApiKey: true })
+    consoleLog('console', method, path + ' (API key)', r)
+  }
+  async function hitJwt(method, path) {
+    const r = await api(method, path)
+    consoleLog('console', method, path + ' (JWT)', r)
+  }
+  document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => { if (Store.apiKey) document.getElementById('ky-active').value = Store.apiKey }, 50)
+  })
+</script>
+</body>
+</html>

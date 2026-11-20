@@ -19,3 +19,14 @@ export async function hashApiKey(plainKey: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', data)
   return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('')
 }
+
+/**
+ * OTP codes are salted with the email so identical codes for different
+ * users don't collide, and never stored in plaintext.
+ */
+export async function hashOtp(email: string, code: string): Promise<string> {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(`otp:${email.toLowerCase()}:${code}`)
+  const digest = await crypto.subtle.digest('SHA-256', data)
+  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('')
+}
