@@ -81,16 +81,30 @@ export async function presignAvatarUpload(
 }
 
 /**
- * Short-lived presigned GET URL — lets private buckets serve avatars to the
- * owner's browser without exposing the key. Not used for public buckets.
+ * Short-lived presigned GET URL — the ONLY way a private bucket serves reads.
+ * The UI must refresh this when it expires (track expiresIn / expires_at);
+ * a bare object URL 403s on a private bucket.
  */
 export async function presignAvatarDownload(
   env: B2Env,
-  key: string
-): Promise<{ downloadUrl: string; expiresIn: number }> {
+  publicUrl: string
+): Promise<{ downloadUrl: string; expiresIn: number; expiresAtMs: number }> {
+  const target = new URL(publicUrl)
+  // Same rule as uploads: the expiry must live in the query string.
+  target.searchParams.set('X-Amz-Expires', String(AVATAR_URL_EXPIRY_SECONDS))
   const signed = await clientFor(env).sign(
-    new Request(b2PublicUrl(env, key), { method: 'GET' }),
+    new Request(target.toString(), { method: 'GET' }),
     { aws: { signQuery: true } }
   )
-  return { downloadUrl: signed.url, expiresIn: 300 }
+  return {
+    downloadUrl: signed.url,
+    expiresIn: AVATAR_URL_EXPIRY_SECONDS,
+    expiresAtMs: Date.now() + AVATAR_URL_EXPIRY_SECONDS * 1000,
+  }
+}
+
+/** Object key for a stored public URL (asserts it belongs to this bucket). */
+export function keyFromPublicUrl(env: B2Env, publicUrl: string): string | null {
+  const prefix = `https://${env.B2_ENDPOINT}/${env.B2_BUCKET}/`
+  return publicUrl.startsWith(prefix) ? publicUrl.slice(prefix.length) : null
 }

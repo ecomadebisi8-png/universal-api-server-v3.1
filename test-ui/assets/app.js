@@ -22,10 +22,18 @@ const Store = {
     if (v) localStorage.setItem('uas_avatar', v)
     else localStorage.removeItem('uas_avatar')
   },
+  /** Short-lived signed READ url (private bucket) — never the object url itself */
+  get avatarDisplay() { return localStorage.getItem('uas_avatar_display') || '' },
+  set avatarDisplay(v) {
+    if (v) localStorage.setItem('uas_avatar_display', v)
+    else localStorage.removeItem('uas_avatar_display')
+  },
   clearSession() {
     localStorage.removeItem('uas_token')
     localStorage.removeItem('uas_refresh')
     localStorage.removeItem('uas_email')
+    localStorage.removeItem('uas_avatar')
+    localStorage.removeItem('uas_avatar_display')
   },
 }
 
@@ -146,14 +154,28 @@ function captureTokens(data) {
 
 /** Fetch the signed-in user's profile (avatar) from the API. */
 async function loadProfile() {
-  if (!Store.token) { Store.avatar = ''; renderTokenBar(); return null }
+  if (!Store.token) { Store.avatar = ''; Store.avatarDisplay = ''; renderTokenBar(); return null }
   const r = await api('GET', '/api/v1/profile/me')
   if (r.status === 200) {
     Store.avatar = r.data?.avatar_url || ''
+    Store.avatarDisplay = r.data?.avatar_display_url || ''
     if (r.data?.user?.email) Store.email = r.data.user.email
   }
   renderTokenBar()
   return r
+}
+
+/**
+ * Re-mint the short-lived signed READ url (private bucket links die after ~5 min).
+ * Called when an <img> 403s/expires, and on retry after a fresh load.
+ */
+async function refreshAvatarDisplay() {
+  if (!Store.token || !Store.avatar) return
+  const r = await api('GET', '/api/v1/profile/avatar/display-url')
+  if (r.status === 200 && r.data?.avatar_display_url) {
+    Store.avatarDisplay = r.data.avatar_display_url
+    renderTokenBar()
+  }
 }
 
 /** Initials fallback for the avatar circle: "adebisi..." → "AD" */
@@ -162,12 +184,32 @@ function initialsOf(email) {
   return ((parts[0]?.[0] || '?') + (parts[1]?.[0] || parts[0]?.[1] || '')).toUpperCase()
 }
 
-/** The little avatar circle shown in the token bar on every page. */
+/** The little avatar circle shown in the token bar on every page.
+ *  Renders the short-lived SIGNED url; on a 403 (expired link) it fetches a
+ *  fresh one exactly once, then falls back to initials. */
 function avatarHTML(size = 22) {
-  const avatarUrl = Store.avatar
   const style = `width:${size}px;height:${size}px;font-size:${Math.round(size * 0.42)}px`
-  if (avatarUrl) return `<img class="avatar-img" src="${esc(avatarUrl)}" alt="" style="${style}" onerror="this.replaceWith(initialsSpan())">`
+  if (Store.avatar && Store.avatarDisplay) {
+    return `<img class="avatar-img" src="${esc(Store.avatarDisplay)}" alt="" style="${style}"` +
+      ` data-avatar-retry="0" onerror="avatarImgError(this)">`
+  }
   return `<span class="avatar-fallback" style="${style}">${esc(initialsOf(Store.email))}</span>`
+}
+/** Expired/403 avatar image: re-mint the link once, else drop to initials. */
+function avatarImgError(img) {
+  const tries = Number(img.dataset.avatarRetry || '0')
+  if (tries === 0) {
+    img.dataset.avatarRetry = '1'
+    refreshAvatarDisplay().then(() => {
+      if (Store.avatarDisplay) {
+        img.src = Store.avatarDisplay
+        return
+      }
+      img.replaceWith(initialsSpan())
+    })
+  } else {
+    img.replaceWith(initialsSpan())
+  }
 }
 function initialsSpan() {
   const s = document.createElement('span')

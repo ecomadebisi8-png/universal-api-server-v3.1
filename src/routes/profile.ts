@@ -14,6 +14,7 @@ import type { Bindings, Variables } from '../types'
 import {
   b2Configured,
   presignAvatarUpload,
+  presignAvatarDownload,
   avatarTypeAllowed,
   AVATAR_MAX_BYTES,
 } from '../lib/b2'
@@ -25,17 +26,41 @@ const app = new Hono<{ Bindings: Bindings; Variables: Variables }>()
 /** Everything in this module needs a valid user JWT. */
 app.use('*', jwtAuth)
 
+/** A short-lived signed READ url for the user's own avatar (private buckets). */
+async function displayUrlFor(env: Bindings, avatarUrl: string | null) {
+  if (!avatarUrl || !b2Configured(env)) return null
+  try {
+    return (await presignAvatarDownload(env, avatarUrl)).downloadUrl
+  } catch {
+    // A private bucket + stale/renamed object: fall back to no image
+    return null
+  }
+}
+
 /** Identity + current avatar for the logged-in user. */
 app.get('/me', async (c) => {
   const user = c.get('user')
   if (!user) return c.json({ error: 'Invalid or expired token' }, 401)
   const row = await getUserProfile(c.env.DB, user.sub)
+  const avatar = row?.avatar_url ?? null
   return c.json({
     status: 'ok',
     user: { id: user.sub, email: user.email, role: user.role ?? 'user' },
-    avatar_url: row?.avatar_url ?? null,
+    avatar_url: avatar,
+    avatar_display_url: await displayUrlFor(c.env, avatar),
     created_at: row?.created_at ?? null,
   })
+})
+
+/** Fresh signed read url — call this when a previous display url expires. */
+app.get('/avatar/display-url', async (c) => {
+  const user = c.get('user')
+  if (!user) return c.json({ error: 'Invalid or expired token' }, 401)
+  const row = await getUserProfile(c.env.DB, user.sub)
+  const avatar = row?.avatar_url ?? null
+  if (!avatar) return c.json({ status: 'ok', avatar_url: null, avatar_display_url: null })
+  const displayUrl = await displayUrlFor(c.env, avatar)
+  return c.json({ status: 'ok', avatar_url: avatar, avatar_display_url: displayUrl })
 })
 
 /** Step 1: mint a 5-minute presigned PUT URL for the user's avatar. */

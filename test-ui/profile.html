@@ -83,10 +83,27 @@
 
     const frame = document.getElementById('av-frame')
     if (!frame) return
-    if (me?.avatar_url) {
-      frame.innerHTML = `<img src="${esc(me.avatar_url)}" alt="avatar" onerror="this.parentElement.innerHTML='<div class=\\'avatar-placeholder\\'>👤</div>'">`
+    if (me?.avatar_url && me?.avatar_display_url) {
+      frame.innerHTML = `<img src="${esc(me.avatar_display_url)}" alt="avatar"` +
+        ` data-avatar-retry="0" onerror="profileAvatarImgError(this)">`
+    } else if (me?.avatar_url) {
+      // stored but the signed link expired — mint a fresh one, then render
+      refreshAvatarDisplay().then(() => renderProfile(me))
     } else {
       frame.innerHTML = `<div class="avatar-placeholder">${esc(initialsOf(Store.email || '?'))}</div>`
+    }
+  }
+  /** Expired/403 big avatar: re-mint the link once, then show initials. */
+  function profileAvatarImgError(img) {
+    const tries = Number(img.dataset.avatarRetry || '0')
+    if (tries === 0) {
+      img.dataset.avatarRetry = '1'
+      refreshAvatarDisplay().then(() => {
+        if (Store.avatarDisplay) img.src = Store.avatarDisplay
+        else img.replaceWith(Object.assign(document.createElement('div'), { className: 'avatar-placeholder', textContent: initialsOf(Store.email || '?') }))
+      })
+    } else {
+      img.replaceWith(Object.assign(document.createElement('div'), { className: 'avatar-placeholder', textContent: initialsOf(Store.email || '?') }))
     }
   }
 
@@ -134,9 +151,8 @@
     const attach = await api('POST', '/api/v1/profile/avatar', { avatar_url: pre.data.publicUrl })
     consoleLog('console', 'POST', '/api/v1/profile/avatar', attach)
     if (attach.status === 200) {
-      Store.avatar = attach.data.avatar_url
-      renderTokenBar()
       toast('ok', 'Profile picture set', 'It now shows in the token bar on every page')
+      await loadProfile()  // pulls the fresh signed display url too
       refreshMe()
     }
   }
