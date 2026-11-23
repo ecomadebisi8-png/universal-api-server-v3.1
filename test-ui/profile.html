@@ -47,11 +47,11 @@
   <div class="card">
     <div class="card-title">🗺️ How the bytes travel</div>
     <div class="endpoint-terms">
-      <div class="endpoint"><span class="chip post">POST</span><span class="path">/api/v1/profile/avatar/upload-url</span><span class="grow"></span><span class="pill">signed PUT URL, 5 min</span></div>
-      <div class="endpoint"><span class="chip get">PUT</span><span class="path">B2 object URL (direct from browser)</span><span class="grow"></span><span class="pill cyan">raw image bytes</span></div>
-      <div class="endpoint"><span class="chip post">POST</span><span class="path">/api/v1/profile/avatar</span><span class="grow"></span><span class="pill green">attach to user</span></div>
-      <div class="endpoint"><span class="chip get">GET</span><span class="path">/api/v1/profile/me</span><span class="grow"></span><span class="pill">echoes avatar_url</span></div>
+      <div class="endpoint"><span class="chip post">POST</span><span class="path">/api/v1/profile/avatar/upload</span><span class="grow"></span><span class="pill green">one call: raw bytes in, stored + attached</span></div>
+      <div class="endpoint"><span class="chip get">GET</span><span class="path">/api/v1/profile/avatar/display-url</span><span class="grow"></span><span class="pill">signed read URL, 5 min</span></div>
+      <div class="endpoint"><span class="chip get">GET</span><span class="path">/api/v1/profile/me</span><span class="grow"></span><span class="pill">identity + avatar + display URL</span></div>
       <div class="endpoint"><span class="chip delete">DEL</span><span class="path">/api/v1/profile/avatar</span><span class="grow"></span><span class="pill red">remove</span></div>
+      <div class="hint" style="margin-top:8px">Buckets only allow GET from the browser (B2's web CORS form can't grant PUT), so uploads ride through the Worker — no CORS anywhere in the path. Presigned-direct uploads stay available at <span class="mono">/avatar/upload-url</span> for when you need big files (video/PDF) later.</div>
     </div>
   </div>
 
@@ -132,29 +132,30 @@
     if (!file) return toast('err', 'No file', 'Choose an image first')
     if (file.size > 5 * 1024 * 1024) return toast('err', 'Too large', '5 MB max')
 
-    toast('info', 'Uploading…', 'Requesting a signed URL, then PUTting bytes to B2')
+    toast('info', 'Uploading…', 'Sending the image to the server, which stores it in B2')
 
-    // 1 — presigned PUT URL (the server never sees the image)
-    const pre = await api('POST', '/api/v1/profile/avatar/upload-url', { content_type: file.type, size_bytes: file.size })
-    consoleLog('console', 'POST', '/api/v1/profile/avatar/upload-url', pre)
-    if (pre.status !== 200) return toast('err', 'Upload URL failed', pre.data?.message || 'check the response console')
-
-    // 2 — direct browser → B2 upload
-    const put = await fetch(pre.data.uploadUrl, { method: 'PUT', body: file, headers: { 'Content-Type': file.type } })
-    if (!put.ok) {
-      consoleLog('console', 'PUT', 'B2 direct upload', { status: put.status, data: await put.text().catch(() => ''), ms: 0 })
-      return toast('err', 'Direct upload failed', `B2 answered ${put.status} — check bucket CORS rules`)
+    // One call: raw bytes → Worker → B2 → attached to your account.
+    // (Browser→B2 direct needs bucket CORS for PUT; the B2 web form can't set
+    //  that, so small files ride through the Worker instead.)
+    const res = await fetch(`${Store.base}/api/v1/profile/avatar/upload`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': file.type,
+        'Authorization': `Bearer ${Store.token}`,
+      },
+      body: file,
+    })
+    const text = await res.text()
+    let data = null
+    try { data = text ? JSON.parse(text) : null } catch { data = text }
+    consoleLog('console', 'POST', '/api/v1/profile/avatar/upload', { status: res.status, data })
+    if (res.status !== 200) {
+      return toast('err', 'Upload failed', data?.message || `server answered ${res.status}`)
     }
-    consoleLog('console', 'PUT', 'B2 direct upload', { status: put.status, data: { ok: true }, ms: 0 })
 
-    // 3 — attach the object URL to this user
-    const attach = await api('POST', '/api/v1/profile/avatar', { avatar_url: pre.data.publicUrl })
-    consoleLog('console', 'POST', '/api/v1/profile/avatar', attach)
-    if (attach.status === 200) {
-      toast('ok', 'Profile picture set', 'It now shows in the token bar on every page')
-      await loadProfile()  // pulls the fresh signed display url too
-      refreshMe()
-    }
+    toast('ok', 'Profile picture set', 'It now shows in the token bar on every page')
+    await loadProfile()  // pulls the fresh signed display url too
+    refreshMe()
   }
 
   async function removeAvatar() {

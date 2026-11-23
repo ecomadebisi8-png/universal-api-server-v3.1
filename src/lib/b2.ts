@@ -108,3 +108,35 @@ export function keyFromPublicUrl(env: B2Env, publicUrl: string): string | null {
   const prefix = `https://${env.B2_ENDPOINT}/${env.B2_BUCKET}/`
   return publicUrl.startsWith(prefix) ? publicUrl.slice(prefix.length) : null
 }
+
+/**
+ * PUT object bytes to B2 from inside the Worker (server-side, no CORS).
+ * Used for small payloads like avatars — the bytes stream through instead of
+ * being buffered, so the 128 MB isolate limit is never a concern here.
+ */
+export async function putAvatarObject(
+  env: B2Env,
+  userId: string,
+  contentType: string,
+  body: ReadableStream | ArrayBuffer | string,
+  contentLength: number
+): Promise<{ publicUrl: string; key: string }> {
+  const ext = avatarExtFor(contentType)
+  const key = `avatars/${userId}-${crypto.randomUUID()}.${ext}`
+  const objectUrl = b2PublicUrl(env, key)
+  const signed = await clientFor(env).sign(
+    new Request(objectUrl, { method: 'PUT' }),
+    { aws: { signQuery: true } }
+  )
+  const res = await fetch(signed.url, {
+    method: 'PUT',
+    body,
+    headers: { 'Content-Type': contentType, 'Content-Length': String(contentLength) },
+    // @ts-expect-error duplex is required when streaming a request body
+    duplex: 'half',
+  })
+  if (!res.ok) {
+    throw new Error(`B2 PUT failed: ${res.status} ${await res.text().catch(() => '')}`)
+  }
+  return { publicUrl: objectUrl, key }
+}

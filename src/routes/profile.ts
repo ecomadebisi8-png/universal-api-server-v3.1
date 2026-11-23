@@ -15,6 +15,7 @@ import {
   b2Configured,
   presignAvatarUpload,
   presignAvatarDownload,
+  putAvatarObject,
   avatarTypeAllowed,
   AVATAR_MAX_BYTES,
 } from '../lib/b2'
@@ -89,6 +90,46 @@ app.post('/avatar/upload-url', async (c) => {
 
   const signed = await presignAvatarUpload(c.env, user.sub, contentType)
   return c.json({ status: 'ok', ...signed, max_bytes: AVATAR_MAX_BYTES })
+})
+
+/**
+ * ONE-CALL upload: the browser POSTs the raw image here, the Worker signs a
+ * PUT and streams it to B2 server-side, then attaches it to the user.
+ * No browser CORS on the B2 side — the Worker talks to B2 directly.
+ * (The presigned 3-step flow stays for big-file endpoints like video/PDF.)
+ */
+app.post('/avatar/upload', async (c) => {
+  const user = c.get('user')
+  if (!user) return c.json({ error: 'Invalid or expired token' }, 401)
+  if (!b2Configured(c.env)) {
+    return c.json({
+      error: 'Storage not configured',
+      message: 'B2_KEY_ID, B2_APP_KEY, B2_BUCKET and B2_ENDPOINT must be set on the worker (wrangler secret put).',
+    }, 503)
+  }
+
+  const contentType = (c.req.header('Content-Type') || 'image/jpeg').split(';')[0].trim()
+  if (!avatarTypeAllowed(contentType)) {
+    return c.json({ error: 'Unsupported image type', allowed: ['image/jpeg', 'image/png', 'image/webp', 'image/gif', 'image/avif'] }, 400)
+  }
+  const declared = Number(c.req.header('Content-Length') || '0')
+  if (declared > AVATAR_MAX_BYTES) {
+    return c.json({ error: 'Image too large', max_bytes: AVATAR_MAX_BYTES }, 400)
+  }
+
+  const body = c.req.raw.body
+  if (!body) return c.json({ error: 'Empty body — send the raw image bytes' }, 400)
+
+  let result
+  try {
+    result = await putAvatarObject(c.env, user.sub, contentType, body, declared)
+  } catch (e) {
+    return c.json({ error: 'Upload to storage failed', message: e instanceof Error ? e.message : String(e) }, 502)
+  }
+
+  await setUserAvatar(c.env.DB, user.sub, result.publicUrl)
+  const displayUrl = await displayUrlFor(c.env, result.publicUrl)
+  return c.json({ status: 'ok', avatar_url: result.publicUrl, avatar_display_url: displayUrl, key: result.key })
 })
 
 /** Step 3: attach the uploaded object's public URL to the user. */
