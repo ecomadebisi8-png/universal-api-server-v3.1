@@ -249,6 +249,7 @@ function renderChrome(active) {
     ['api-keys.html', 'API Keys'],
     ['sandbox.html', 'Sandbox'],
     ['database.html', 'Database'],
+    ['events.html', 'Events'],
     ['profile.html', 'Profile'],
     ['admin.html', 'Admin'],
   ]
@@ -259,7 +260,7 @@ function renderChrome(active) {
       <div class="brand-mark">UAS</div>
       <div>
         <div class="brand-text">Universal API Server</div>
-        <div class="brand-sub">v3.1 test console</div>
+        <div class="brand-sub">v3.3 test console</div>
       </div>
     </a>
     <nav class="topnav">
@@ -300,7 +301,7 @@ function renderChrome(active) {
   document.body.appendChild(toasts)
 
   const foot = document.createElement('footer')
-  foot.innerHTML = `Built with <span class="heart">♥</span> for Temiloluwa — Universal API Server v3.1 · Hono + Cloudflare Workers + D1`
+  foot.innerHTML = 'Built with <span class="heart">♥</span> for Temiloluwa — Universal API Server v3.3 · Hono + Cloudflare Workers + D1'
   document.body.appendChild(foot)
 
   renderTokenBar()

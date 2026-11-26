@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Events — Universal API Server v3.3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body data-page="events.html">
+<div class="shell">
+
+  <section class="hero">
+    <h1>Real-time <span class="grad">events</span></h1>
+    <p>Push once, appears everywhere. Connect the live stream, fire a test event on another account (or here), and watch it arrive — SSE with a JSON poll fallback, cursor = event <span class="mono">seq</span>.</p>
+  </section>
+
+  <div class="card">
+    <div class="card-title">📡 Live stream</div>
+    <div class="card-desc">GET /api/v1/events — the browser's EventSource can't send Authorization headers, so this page reads the stream with fetch (same bytes, headers allowed). Only events newer than the cursor are pushed.</div>
+
+    <div class="row" style="margin-top:12px;flex-wrap:wrap;gap:10px">
+      <span id="sse-dot" class="token-dot"></span>
+      <span class="small muted" id="sse-state">disconnected</span>
+      <span class="spacer"></span>
+      <button class="btn primary" onclick="connectSSE(false)">Connect (token)</button>
+      <button class="btn ghost" onclick="connectSSE(true)">Connect (API key)</button>
+      <button class="btn danger" onclick="disconnectSSE()">Disconnect</button>
+    </div>
+
+    <div class="grid three" style="margin-top:14px">
+      <div class="stat"><div class="k">cursor</div><div class="v accent mono" id="sse-cursor">—</div><div class="s">event seq</div></div>
+      <div class="stat"><div class="k">events in</div><div class="v mono" id="sse-count">0</div><div class="s">this session</div></div>
+      <div class="stat"><div class="k">listening as</div><div class="v mono" id="sse-who" style="font-size:15px">—</div><div class="s">scope</div></div>
+    </div>
+
+    <div class="console" style="margin-top:12px">
+      <div class="console-head"><span>stream</span><span style="flex:1"></span>
+        <button class="btn small ghost" onclick="clearStream()">clear</button>
+      </div>
+      <div class="console-body" id="stream"><div class="console-empty">// connect to start receiving events</div></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🧪 Send a test event</div>
+    <div class="card-desc">Fires a real mutation — <span class="mono">item.created</span> (global, everyone sees it) followed by <span class="mono">item.deleted</span> (scoped to you). If the stream is connected, both land live.</div>
+    <div class="row" style="margin-top:12px">
+      <input class="mono" id="test-item-name" placeholder="item name" value="ui-test-event" style="flex:1;min-width:200px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--foreground)">
+      <button class="btn primary" onclick="fireTestEvent(false)">Send via token</button>
+      <button class="btn ghost" onclick="fireTestEvent(true)">Send via API key</button>
+    </div>
+    <div class="hint" style="margin-top:8px">API-key sends need a key with <span class="mono">write</span> permission (set one up on the API Keys page).</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🧾 History & sync (poll fallback)</div>
+    <div class="card-desc">GET /api/v1/events/history — for clients that can't hold a stream open (IoT, cron, mobile background).</div>
+    <div class="row" style="margin-top:12px">
+      <input class="mono" id="hist-since" placeholder="since seq" value="0" style="width:110px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--foreground)">
+      <input class="mono" id="hist-limit" placeholder="limit" value="25" style="width:90px;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:9px 12px;color:var(--foreground)">
+      <button class="btn primary" onclick="loadHistory()">Load history</button>
+      <button class="btn ghost" onclick="loadModuleInfo()">Module info</button>
+    </div>
+    <div class="record-grid" id="history-grid" style="margin-top:12px"><div class="console-empty">// load history to see recent events</div></div>
+    <div class="hint" style="margin-top:8px">Advance <span class="mono">since</span> to the returned cursor to poll only what's new. <span class="mono">GET /api/v1/sync/changes</span> is the same shape plus <span class="mono">server_time</span> — built for offline-first clients.</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">🗺️ The realtime map</div>
+    <div class="endpoint-terms">
+      <div class="endpoint"><span class="chip get">GET</span><span class="path">/api/v1/events</span><span class="grow"></span><span class="pill green">live SSE — 2s D1 poll + instant wake, 15s heartbeat</span></div>
+      <div class="endpoint"><span class="chip get">GET</span><span class="path">/api/v1/events/history</span><span class="grow"></span><span class="pill">JSON poll — since/limit</span></div>
+      <div class="endpoint"><span class="chip get">GET</span><span class="path">/api/v1/sync/changes</span><span class="grow"></span><span class="pill">offline delta pull — server_time</span></div>
+      <div class="hint" style="margin-top:8px">Published events: <span class="mono">user.registered · user.login · user.password_changed · api_key.created · api_key.revoked · item.created · item.deleted · profile.avatar_updated · profile.avatar_removed</span>. <span class="mono">user_id = null</span> events are global; the rest are scoped to their owner (and that owner's API keys). Kill switch: <span class="mono">REALTIME_ENABLED=false</span> → 503 on all three.</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📡 Response console</div>
+    <div class="console">
+      <div class="console-head"><span>live</span><span style="flex:1"></span>
+        <button class="btn small ghost" onclick="clearConsole()">clear</button>
+      </div>
+      <div class="console-body" id="console"><div class="console-empty">// responses appear here</div></div>
+    </div>
+  </div>
+
+</div>
+<script src="assets/app.js"></script>
+<script>
+  /* ---------- SSE client (fetch + manual frame parsing; headers allowed) ---------- */
+  const sse = { reader: null, controller: null, connected: false, cursor: 0, count: 0, who: '' }
+
+  function clearConsole() { document.getElementById('console').innerHTML = '<div class="console-empty">// responses appear here</div>' }
+  function clearStream() {
+    document.getElementById('stream').innerHTML = '<div class="console-empty">// connect to start receiving events</div>'
+    sse.count = 0
+    document.getElementById('sse-count').textContent = '0'
+  }
+
+  function sseState(text, on) {
+    document.getElementById('sse-state').textContent = text
+    document.getElementById('sse-dot').classList.toggle('on', !!on)
+  }
+
+  async function connectSSE(useKey) {
+    disconnectSSE()
+    if (!Store.token && !Store.apiKey) { toast('err', 'No session', 'Login on the Auth page first'); return }
+    const headers = {}
+    if (useKey && Store.apiKey) headers['X-API-Key'] = Store.apiKey
+    else if (Store.token) headers['Authorization'] = `Bearer ${Store.token}`
+    else { toast('err', 'No API key', 'Create one on the API Keys page'); return }
+
+    sseState('connecting…', false)
+    const controller = new AbortController()
+    sse.controller = controller
+    const started = performance.now()
+    let res
+    try {
+      res = await fetch(`${Store.base}/api/v1/events`, { headers, signal: controller.signal })
+    } catch (e) {
+      if (String(e).includes('abort')) return // user disconnected
+      sseState('network error', false)
+      return toast('err', 'Stream failed', String(e))
+    }
+    if (!res.ok || !(res.headers.get('content-type') || '').includes('text/event-stream')) {
+      const text = await res.text().catch(() => '')
+      consoleLog('console', 'GET', '/api/v1/events', { status: res.status, data: text, ms: Math.round(performance.now() - started) })
+      sseState(`rejected (${res.status})`, false)
+      return toast('err', `Stream refused (${res.status})`, text.slice(0, 120))
+    }
+    sse.connected = true
+    sse.who = useKey ? 'api key' : (Store.email || 'token')
+    document.getElementById('sse-who').textContent = sse.who
+    sseState('live — listening', true)
+    consoleLog('console', 'GET', '/api/v1/events', { status: 200, data: { stream: 'text/event-stream', note: 'reading with fetch; EventSource cannot send headers' }, ms: Math.round(performance.now() - started) })
+
+    const reader = res.body.getReader()
+    sse.reader = reader
+    const decoder = new TextDecoder()
+    let buf = ''
+    try {
+      for (;;) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        let i
+        while ((i = buf.indexOf('\n\n')) !== -1) {
+          const raw = buf.slice(0, i)
+          buf = buf.slice(i + 2)
+          if (!raw.trim() || raw.startsWith(':')) continue // retry hint / heartbeat
+          const frame = { id: null, event: null, data: '' }
+          for (const line of raw.split('\n')) {
+            if (line.startsWith('id:')) frame.id = line.slice(3).trim()
+            else if (line.startsWith('event:')) frame.event = line.slice(6).trim()
+            else if (line.startsWith('data:')) frame.data += line.slice(5).trim()
+          }
+          onEventFrame(frame)
+        }
+      }
+    } catch (e) {
+      if (!String(e).includes('abort')) console.warn('stream error', e)
+    }
+    if (sse.connected) { sse.connected = false; sseState('closed by server', false) }
+  }
+
+  function disconnectSSE() {
+    if (sse.reader) { try { sse.reader.cancel() } catch {} sse.reader = null }
+    if (sse.controller) { sse.controller.abort(); sse.controller = null }
+    if (sse.connected) { sse.connected = false; sseState('disconnected', false) }
+  }
+
+  function onEventFrame(frame) {
+    if (frame.id) {
+      sse.cursor = Number(frame.id)
+      document.getElementById('sse-cursor').textContent = frame.id
+    }
+    sse.count++
+    document.getElementById('sse-count').textContent = String(sse.count)
+
+    const box = document.getElementById('stream')
+    const empty = box.querySelector('.console-empty')
+    if (empty) empty.remove()
+    let payload = frame.data || ''
+    try { payload = JSON.stringify(JSON.parse(payload)) } catch { /* plain text */ }
+    const time = new Date().toLocaleTimeString('en-GB', { hour12: false })
+    const line = document.createElement('div')
+    line.className = 'console-line'
+    line.innerHTML = `<span class="t-time">${time}</span><b style="color:var(--accent)">${esc(frame.event || 'message')}</b>` +
+      ` <span class="small muted mono">#${esc(frame.id ?? '?')}</span> <span class="mono small">${esc(payload)}</span>`
+    box.appendChild(line)
+    while (box.children.length > 200) box.removeChild(box.firstChild)
+    box.scrollTop = box.scrollHeight
+  }
+
+  /* ---------- fire a real mutation so events actually happen ---------- */
+  async function fireTestEvent(useKey) {
+    const name = (document.getElementById('test-item-name').value || 'ui-test-event').trim() || 'ui-test-event'
+    const opts = { useApiKey: !!useKey }
+    if (useKey && !Store.apiKey) return toast('err', 'No API key', 'Create a write-capable key on the API Keys page')
+    const created = await api('POST', '/api/v1/db/items', { name }, opts)
+    consoleLog('console', 'POST', '/api/v1/db/items', created)
+    if (created.status === 201 && created.data?.id != null) {
+      const removed = await api('DELETE', `/api/v1/db/items/${created.data.id}`, null, opts)
+      consoleLog('console', 'DELETE', '/api/v1/db/items/' + created.data.id, removed)
+      toast('ok', 'Events published', 'item.created + item.deleted — watch the stream')
+    } else {
+      toast('err', 'Could not create item', created.data?.error || `status ${created.status}`)
+    }
+  }
+
+  /* ---------- history / module info ---------- */
+  async function loadHistory() {
+    const since = Number(document.getElementById('hist-since').value || '0') || 0
+    const limit = Number(document.getElementById('hist-limit').value || '25') || 25
+    const r = await api('GET', `/api/v1/events/history?since=${since}&limit=${limit}`)
+    consoleLog('console', 'GET', `/api/v1/events/history?since=${since}&limit=${limit}`, r)
+    if (r.status !== 200) { toast('err', 'History failed', r.data?.error || String(r.status)); return }
+    const rows = (r.data?.events || []).slice().reverse()
+    renderCards('history-grid', rows, [
+      { label: 'seq', get: (e) => e.seq, mono: true },
+      { label: 'type', get: (e) => e.type, color: (e) => e.type.startsWith('item.') ? 'var(--accent)' : 'var(--cyan)' },
+      { label: 'scope', get: (e) => (e.user_id ? 'user' : 'global'), color: (e) => e.user_id ? 'var(--muted)' : 'var(--green, #4ade80)' },
+      { label: 'actor', get: (e) => e.actor },
+      { label: 'time', get: (e) => (e.created_at || '').replace('T', ' ').slice(0, 19) },
+    ])
+    toast('ok', 'History loaded', `${r.data.count} event(s) · cursor ${r.data.cursor}`)
+  }
+
+  async function loadModuleInfo() {
+    const r = await api('GET', '/api/v1')
+    consoleLog('console', 'GET', '/api/v1', r)
+    if (r.status === 200) toast('ok', `Module ${r.data.module} ${r.data.version}`, `enabled=${r.data.enabled} · ${Array.isArray(r.data.event_types) ? r.data.event_types.length : '?'} event types`)
+    else toast('err', 'Module info failed', r.data?.error || String(r.status))
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    setTimeout(() => {
+      if (Store.token || Store.apiKey) loadModuleInfo()
+      else toast('info', 'Not signed in', 'Login (or set an API key) to use the realtime console')
+    }, 80)
+  })
+</script>
+</body>
+</html>
